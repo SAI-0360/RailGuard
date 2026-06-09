@@ -5,7 +5,6 @@ import CellGrid from './components/CellGrid';
 export default function App() {
   const [selectedSegmentId, setSelectedSegmentId] = useState(null);
 
-  // Stats for the top row cards (hardcoded for Day 1 as per task description)
   const stats = {
     total: 100,
     healthy: 98,
