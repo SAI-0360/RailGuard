@@ -1,19 +1,27 @@
 # Dependency directories
 node_modules/
 
-# Environment variables
+# Environment variables (actual keys — NEVER commit)
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
+# Package files (Member 2 owns the official package.json)
+backend/package.json
+backend/package-lock.json
+
+# Test/dev-only files (not in master spec Section 3)
+backend/testAi.js
+backend/testGeminiConnection.js
+backend/data/sampleReports.js
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
 # Editor directories and files
 .vscode/
