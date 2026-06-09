@@ -10,20 +10,43 @@ if (apiKey && apiKey !== "your_key_here") {
 }
 
 /**
- * Clean markdown code fences and parse JSON safely.
+ * Multi-strategy JSON extraction: raw parse → strip fences → extract first {...} block.
+ */
+function extractJsonFromText(rawText) {
+  if (!rawText || typeof rawText !== "string") return null;
+  const text = rawText.trim();
+
+  // Strategy 1: raw parse
+  try { return JSON.parse(text); } catch (_) {}
+
+  // Strategy 2: strip all code fence variants then parse
+  const stripped = text
+    .replace(/^```(?:json)?\s*\n?/m, "")
+    .replace(/\n?\s*```\s*$/m, "")
+    .trim();
+  try { return JSON.parse(stripped); } catch (_) {}
+
+  // Strategy 3: pull out the largest {...} block (handles prose before/after JSON)
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch (_) {}
+  }
+
+  return null;
+}
+
+/**
+ * Parse and validate a Gemini verification response.
  */
 function cleanAndParseJson(rawText, fallback) {
-  let cleaned = rawText.trim();
-  
-  // Remove markdown code fences if present
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+  const parsed = extractJsonFromText(rawText);
+
+  if (!parsed) {
+    console.error("All JSON parse attempts failed. Raw text:", String(rawText).substring(0, 200));
+    return fallback;
   }
 
   try {
-    const parsed = JSON.parse(cleaned);
-    
-    // Validate required fields
     if (typeof parsed.isVerified !== "boolean") {
       throw new Error("isVerified must be a boolean");
     }
@@ -31,21 +54,19 @@ function cleanAndParseJson(rawText, fallback) {
       throw new Error("confidence must be a number between 0.0 and 1.0");
     }
     if (!parsed.verificationReasoning || typeof parsed.verificationReasoning !== "string") {
-      throw new Error("verificationReasoning must be a string");
+      throw new Error("verificationReasoning must be a non-empty string");
     }
-    
-    // Validate statusRecommendation
+
     const validRecommendations = ["healthy", "warning", "critical"];
     if (!parsed.statusRecommendation || !validRecommendations.includes(parsed.statusRecommendation.toLowerCase())) {
-      parsed.statusRecommendation = "healthy"; // Default recommendation
+      parsed.statusRecommendation = "healthy";
     } else {
       parsed.statusRecommendation = parsed.statusRecommendation.toLowerCase();
     }
-    
+
     return parsed;
   } catch (error) {
-    console.error("JSON parsing/validation failed for Gemini verifier response. Raw text:", rawText);
-    console.error("Parse Error details:", error.message);
+    console.error("Gemini verifier validation failed:", error.message, "| Raw text:", String(rawText).substring(0, 200));
     return fallback;
   }
 }
@@ -57,8 +78,8 @@ function cleanAndParseJson(rawText, fallback) {
  * @returns {Promise<Object>} Verification report.
  */
 async function verifyRepair(originalDefect, repairDescription) {
-  if (!genAI || !originalDefect || !repairDescription) {
-    console.warn("Gemini client not initialized or missing arguments. Using fallback verification.");
+  if (!genAI || !originalDefect || !repairDescription || typeof repairDescription !== "string" || !repairDescription.trim()) {
+    console.warn("Gemini client not initialized or missing/invalid arguments. Using fallback verification.");
     return FALLBACK_VERIFICATION;
   }
 

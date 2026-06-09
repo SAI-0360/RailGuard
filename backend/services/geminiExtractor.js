@@ -10,19 +10,43 @@ if (apiKey && apiKey !== "your_key_here") {
 }
 
 /**
- * Clean markdown code fences and parse JSON safely.
+ * Multi-strategy JSON extraction: raw parse → strip fences → extract first {...} block.
+ */
+function extractJsonFromText(rawText) {
+  if (!rawText || typeof rawText !== "string") return null;
+  const text = rawText.trim();
+
+  // Strategy 1: raw parse
+  try { return JSON.parse(text); } catch (_) {}
+
+  // Strategy 2: strip all code fence variants then parse
+  const stripped = text
+    .replace(/^```(?:json)?\s*\n?/m, "")
+    .replace(/\n?\s*```\s*$/m, "")
+    .trim();
+  try { return JSON.parse(stripped); } catch (_) {}
+
+  // Strategy 3: pull out the largest {...} block (handles prose before/after JSON)
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch (_) {}
+  }
+
+  return null;
+}
+
+/**
+ * Parse and validate a Gemini extraction response.
  */
 function cleanAndParseJson(rawText, fallback) {
-  let cleaned = rawText.trim();
-  
-  // Remove markdown code fences if present
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+  const parsed = extractJsonFromText(rawText);
+
+  if (!parsed) {
+    console.error("All JSON parse attempts failed. Raw text:", String(rawText).substring(0, 200));
+    return fallback;
   }
 
   try {
-    const parsed = JSON.parse(cleaned);
-    
     // Validate required fields
     const requiredFields = ["defectType", "location", "severity", "description", "recommendedAction"];
     for (const field of requiredFields) {
@@ -30,19 +54,18 @@ function cleanAndParseJson(rawText, fallback) {
         throw new Error(`Missing or invalid field: ${field}`);
       }
     }
-    
+
     // Validate severity value
     const validSeverities = ["low", "medium", "high", "critical"];
     if (!validSeverities.includes(parsed.severity.toLowerCase())) {
-      parsed.severity = "medium"; // Safe fallback within parsed structure
+      parsed.severity = "medium";
     } else {
       parsed.severity = parsed.severity.toLowerCase();
     }
-    
+
     return parsed;
   } catch (error) {
-    console.error("JSON parsing/validation failed for Gemini response. Raw text:", rawText);
-    console.error("Parse Error details:", error.message);
+    console.error("Gemini extractor validation failed:", error.message, "| Raw text:", String(rawText).substring(0, 200));
     return fallback;
   }
 }
@@ -53,8 +76,8 @@ function cleanAndParseJson(rawText, fallback) {
  * @returns {Promise<Object>} The extracted defect details matching the schema.
  */
 async function extractDefect(reportText) {
-  if (!genAI || !reportText) {
-    console.warn("Gemini client not initialized or empty report text. Using fallback extraction.");
+  if (!genAI || !reportText || typeof reportText !== "string" || !reportText.trim()) {
+    console.warn("Gemini client not initialized or empty/invalid report text. Using fallback extraction.");
     return FALLBACK_EXTRACTION;
   }
 
@@ -110,24 +133,20 @@ async function generateRiskExplanation(segment) {
 
     const prompt = `You are a railway safety analyst for the RailGuard monitoring dashboard.
 
-TASK: Write a 2-3 sentence plain-English explanation explaining why this track segment has its current risk score and status.
+TASK: Write a plain-English explanation of why segment ${segment.segmentId} has a risk score of ${segment.riskScore}/100 and status "${segment.status}".
 
 SEGMENT DATA:
-- Segment ID: ${segment.segmentId}
-- Status: ${segment.status}
-- Risk Score: ${segment.riskScore} / 100
 - Vibration Level: ${segment.vibrationLevel} mm/s RMS
 - Active Cracks Count: ${segment.crackCount}
 - Historical Incidents: ${segment.incidentCount}
 - Days Since Last Inspection: ${segment.daysSinceInspection}
 
 RULES:
-- Keep the explanation to exactly 2-3 sentences.
-- Be professional and focus on the safety-critical components (e.g. how vibration, cracks, or age contribute to the risk score).
-- Refer to specific values from the segment data.
-
-OUTPUT:
-Write the explanation directly as plain text.`;
+- Output exactly 2-3 sentences. No more. No less.
+- Every sentence must cite at least one specific numeric value from the segment data above.
+- Focus on which factors drive the risk score up (vibration, cracks, incidents, age).
+- Do NOT include repair recommendations or action items.
+- Write in plain text only — no JSON, no bullet points, no headers.`;
 
     const result = await model.generateContent(prompt);
     const responseText = await result.response.text();
