@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { simulateAction, resetAll } from "../services/api";
+import { simulateAction, resetAll, startMonitoring, stopMonitoring, getMonitoringStatus, runDemoScenario } from "../services/api";
 import { TOTAL_SEGMENTS, SEGMENT_ID_PREFIX, DEFAULT_SPIKE_VALUE } from "../utils/constants";
 
 // Generate segment ID options (SEG-001 to SEG-100)
@@ -13,6 +13,74 @@ function SimulatorPanel({ onActionComplete }) {
   const [selectedSegmentId, setSelectedSegmentId] = useState("SEG-042");
   const [loadingAction, setLoadingAction] = useState(null); // tracks which button is loading
   const [lastResult, setLastResult] = useState(null);
+
+  // ─── Monitoring Toggle State ────────────────────────────────────────────────
+  const [monitoringActive, setMonitoringActive] = useState(false);
+  const [cycleCount, setCycleCount] = useState(0);
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
+
+  // Poll monitoring status every 5s
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const data = await getMonitoringStatus();
+        setMonitoringActive(data.active);
+        setCycleCount(data.cycleCount);
+      } catch (_) {
+        // Backend might not have monitoring routes yet — graceful degrade
+      }
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleToggleMonitoring = async () => {
+    setMonitoringLoading(true);
+    try {
+      if (monitoringActive) {
+        await stopMonitoring();
+        setMonitoringActive(false);
+      } else {
+        await startMonitoring();
+        setMonitoringActive(true);
+      }
+    } catch (err) {
+      setLastResult({
+        success: false,
+        message: err?.response?.data?.error || "Monitoring toggle failed",
+      });
+    } finally {
+      setMonitoringLoading(false);
+    }
+  };
+
+  // ─── Demo Scenario State ────────────────────────────────────────────────────
+  const [scenarioLoading, setScenarioLoading] = useState(null);
+
+  const handleScenario = async (scenario) => {
+    setScenarioLoading(scenario);
+    setLastResult(null);
+    try {
+      const result = await runDemoScenario(scenario);
+      setLastResult({
+        success: true,
+        message: result.message || `Scenario "${scenario}" activated`,
+      });
+      if (onActionComplete) {
+        onActionComplete("scenario", null);
+      }
+    } catch (err) {
+      setLastResult({
+        success: false,
+        message: err?.response?.data?.error || "Scenario failed",
+      });
+    } finally {
+      setScenarioLoading(null);
+    }
+  };
+
+  // ─── Simulate Actions ──────────────────────────────────────────────────────
 
   const handleAction = async (actionName, action, value) => {
     setLoadingAction(actionName);
@@ -73,6 +141,58 @@ function SimulatorPanel({ onActionComplete }) {
             className="overflow-hidden"
           >
             <div className="mt-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 space-y-5">
+              {/* ─── Monitoring Toggle Section ─────────────────────────────── */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+                      Autonomous Monitoring
+                    </span>
+                    {monitoringActive && (
+                      <span className="text-xs text-gray-500">
+                        Cycle #{cycleCount}
+                      </span>
+                    )}
+                  </div>
+                  {/* Status Indicator */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      {monitoringActive ? (
+                        <>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                        </>
+                      ) : (
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-500" />
+                      )}
+                    </span>
+                    <span className={`text-xs font-semibold ${monitoringActive ? "text-emerald-400" : "text-gray-500"}`}>
+                      {monitoringActive ? "Active" : "Stopped"}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleToggleMonitoring}
+                  disabled={monitoringLoading}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
+                    monitoringActive
+                      ? "bg-red-500/10 border-red-500/30 hover:bg-red-500/20 text-red-400"
+                      : "bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400"
+                  } ${monitoringLoading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  {monitoringLoading ? (
+                    <Spinner />
+                  ) : monitoringActive ? (
+                    <>⏹ Stop Monitoring</>
+                  ) : (
+                    <>▶ Start Monitoring</>
+                  )}
+                </button>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-white/5" />
+
               {/* DEV ONLY Badge */}
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -159,6 +279,48 @@ function SimulatorPanel({ onActionComplete }) {
                   variant="danger"
                   onClick={() => handleAction("resetAll")}
                 />
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-white/5" />
+
+              {/* ─── Demo Scenarios Section ─────────────────────────────────── */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                    Demo
+                  </span>
+                  <span className="text-xs text-gray-500">Pre-scripted Scenarios</span>
+                </div>
+                <div className="space-y-2">
+                  <SimButton
+                    label="Gradual Degradation"
+                    icon="📉"
+                    sublabel="3-5 segments slowly degrade to warning/critical"
+                    loading={scenarioLoading === "gradual_degradation"}
+                    disabled={scenarioLoading !== null}
+                    variant="warning"
+                    onClick={() => handleScenario("gradual_degradation")}
+                  />
+                  <SimButton
+                    label="Multi-Failure"
+                    icon="💥"
+                    sublabel="5 segments instantly go critical"
+                    loading={scenarioLoading === "multi_failure"}
+                    disabled={scenarioLoading !== null}
+                    variant="danger"
+                    onClick={() => handleScenario("multi_failure")}
+                  />
+                  <SimButton
+                    label="Cascade Effect"
+                    icon="🌊"
+                    sublabel="1 critical + 3 degrading — domino effect"
+                    loading={scenarioLoading === "cascade"}
+                    disabled={scenarioLoading !== null}
+                    variant="danger"
+                    onClick={() => handleScenario("cascade")}
+                  />
+                </div>
               </div>
 
               {/* Result Feedback */}

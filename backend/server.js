@@ -5,6 +5,7 @@ require("dotenv").config();
 const segmentRoutes = require("./routes/segmentRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const statsRoutes = require("./routes/statsRoutes");
+const demoRoutes = require("./routes/demoRoutes");
 const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use("/api", segmentRoutes);
 app.use("/api", aiRoutes);
 app.use("/api", statsRoutes);
+app.use("/api", demoRoutes);
 
 app.use(errorHandler);
 

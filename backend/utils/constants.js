@@ -32,6 +32,12 @@ const CONSTANTS = {
 
   // Gemini
   GEMINI_MODEL: "gemini-2.0-flash",
+
+  // Autonomous monitoring loop [NEW — Day 2]
+  MONITORING_INTERVAL_MS: 10000,
+
+  // Activity log buffer size [NEW — Day 2]
+  MAX_LOG_ENTRIES: 500,
 };
 
 module.exports = CONSTANTS;
