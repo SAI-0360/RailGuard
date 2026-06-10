@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_MODEL } = require("../utils/constants");
-const { FALLBACK_EXTRACTION, FALLBACK_EXPLANATION } = require("../utils/fallbacks");
+const { FALLBACK_EXTRACTION, FALLBACK_EXPLANATION, DEMO_FALLBACK_EXTRACTION, DEMO_FALLBACK_EXPLANATION } = require("../utils/fallbacks");
 const { logActivity } = require("./activityLogger");
 
 // Initialize Gemini client if API key is present
@@ -77,10 +77,15 @@ function cleanAndParseJson(rawText, fallback) {
  * @returns {Promise<Object>} The extracted defect details matching the schema.
  */
 async function extractDefect(reportText) {
+  // Demo-specific fallback when the demo segment (SEG-042) is involved
+  const fallback = (reportText && typeof reportText === "string" && reportText.includes("SEG-042"))
+    ? DEMO_FALLBACK_EXTRACTION
+    : FALLBACK_EXTRACTION;
+
   if (!genAI || !reportText || typeof reportText !== "string" || !reportText.trim()) {
     console.warn("Gemini client not initialized or empty/invalid report text. Using fallback extraction.");
     logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
-    return FALLBACK_EXTRACTION;
+    return fallback;
   }
 
   logActivity("EXTRACTION", "EXTRACT", `Processing inspection report for defect extraction (${reportText.length} chars)...`, "info");
@@ -114,8 +119,8 @@ ${reportText}`;
 
     const geminiResult = await model.generateContent(prompt);
     const responseText = await geminiResult.response.text();
-    const result = cleanAndParseJson(responseText, FALLBACK_EXTRACTION);
-    if (result === FALLBACK_EXTRACTION) {
+    const result = cleanAndParseJson(responseText, fallback);
+    if (result === fallback) {
       logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
     } else {
       logActivity("EXTRACTION", "EXTRACT", `Defect found: ${result.defectType}, severity ${result.severity.toUpperCase()}`, "info");
@@ -124,7 +129,7 @@ ${reportText}`;
   } catch (error) {
     console.error("Gemini extractDefect API call failed:", error.message);
     logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
-    return FALLBACK_EXTRACTION;
+    return fallback;
   }
 }
 
@@ -137,10 +142,15 @@ ${reportText}`;
  * @returns {Promise<string>} Gemini generated explanation.
  */
 async function generateRiskExplanation(segment, prediction = null, workOrder = null) {
+  // Demo-specific fallback when the demo segment (SEG-042) is involved
+  const fallback = (segment && segment.segmentId === "SEG-042")
+    ? DEMO_FALLBACK_EXPLANATION
+    : FALLBACK_EXPLANATION;
+
   if (!genAI || !segment) {
     console.warn("Gemini client not initialized or segment missing. Using fallback explanation.");
     logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment ? segment.segmentId : "unknown segment"}`, "warning");
-    return FALLBACK_EXPLANATION;
+    return fallback;
   }
 
   try {
@@ -183,7 +193,7 @@ RULES:
     const explanation = responseText.trim();
     if (!explanation) {
       logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment.segmentId}`, "warning");
-      return FALLBACK_EXPLANATION;
+      return fallback;
     }
     logActivity("EXTRACTION", "RISK_CALC",
       `Generated risk narration for ${segment.segmentId} (risk: ${segment.riskScore}${prediction ? `, trend: ${prediction.trendDirection}` : ""})`,
@@ -193,7 +203,7 @@ RULES:
   } catch (error) {
     console.error("Gemini generateRiskExplanation API call failed:", error.message);
     logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment.segmentId}`, "warning");
-    return FALLBACK_EXPLANATION;
+    return fallback;
   }
 }
 

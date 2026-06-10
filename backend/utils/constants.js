@@ -36,6 +36,12 @@ const CONSTANTS = {
   // Autonomous monitoring
   MONITORING_INTERVAL_MS: 10000,    // Monitoring loop interval (10s)
   MAX_LOG_ENTRIES: 500,             // Activity log buffer size
+
+  // Trend prediction
+  VIBRATION_CRITICAL_THRESHOLD: 7.0,   // Critical vibration level for prediction
+  MIN_HISTORY_FOR_PREDICTION: 5,        // Min data points for linear regression
+  MAX_PREDICTION_DAYS: 30,              // Ignore predictions beyond 30 days
+  READINGS_PER_DAY_ESTIMATE: 6,         // ~6 monitoring cycles per day
 };
 
 module.exports = CONSTANTS;

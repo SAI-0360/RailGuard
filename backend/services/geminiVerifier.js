@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_MODEL } = require("../utils/constants");
-const { FALLBACK_VERIFICATION } = require("../utils/fallbacks");
+const { FALLBACK_VERIFICATION, DEMO_FALLBACK_VERIFICATION } = require("../utils/fallbacks");
 const { logActivity } = require("./activityLogger");
 
 // Initialize Gemini client if API key is present
@@ -79,10 +79,15 @@ function cleanAndParseJson(rawText, fallback) {
  * @returns {Promise<Object>} Verification report.
  */
 async function verifyRepair(originalDefect, repairDescription) {
+  // Demo-specific fallback when the demo segment (SEG-042) is involved
+  const fallback = (originalDefect && originalDefect.segmentId === "SEG-042")
+    ? DEMO_FALLBACK_VERIFICATION
+    : FALLBACK_VERIFICATION;
+
   if (!genAI || !originalDefect || !repairDescription || typeof repairDescription !== "string" || !repairDescription.trim()) {
     console.warn("Gemini client not initialized or missing/invalid arguments. Using fallback verification.");
     logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");
-    return FALLBACK_VERIFICATION;
+    return fallback;
   }
 
   logActivity("VERIFICATION", "VERIFY", `Verifying repair for defect: ${originalDefect.defectType} (${originalDefect.severity})...`, "info");
@@ -122,8 +127,8 @@ OUTPUT FORMAT:
 
     const geminiResult = await model.generateContent(prompt);
     const responseText = await geminiResult.response.text();
-    const result = cleanAndParseJson(responseText, FALLBACK_VERIFICATION);
-    if (result === FALLBACK_VERIFICATION) {
+    const result = cleanAndParseJson(responseText, fallback);
+    if (result === fallback) {
       logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");
     } else {
       logActivity("VERIFICATION", "VERIFY", `Repair ${result.isVerified ? "VERIFIED" : "REJECTED"} (confidence: ${result.confidence})`, result.isVerified ? "info" : "warning");
@@ -132,7 +137,7 @@ OUTPUT FORMAT:
   } catch (error) {
     console.error("Gemini verifyRepair API call failed:", error.message);
     logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");
-    return FALLBACK_VERIFICATION;
+    return fallback;
   }
 }
 
