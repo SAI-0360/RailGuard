@@ -88,7 +88,11 @@ function SimulatorPanel({ onActionComplete }) {
       const result = await triggerScenario(scenarioType);
       setLastResult({ success: true, message: result.message || "Scenario triggered successfully" });
       if (onActionComplete) {
-        onActionComplete("scenario");
+        if (scenarioType === "clear_all") {
+          onActionComplete("resetAll");
+        } else {
+          onActionComplete("scenario", scenarioType === "critical_degrade" ? "SEG-042" : null);
+        }
       }
     } catch (err) {
       setLastResult({

@@ -46,6 +46,14 @@ This guide outlines how to perform a 2-minute live demo of the RailGuard system.
 ---
 
 ## 🛠️ Dev Presets (Simulator Panel)
+
+### Individual Simulation Actions (Target Segment)
+- **Simulate Vibration Spike:** Instantly generates a progressive vibration spike history ramping from 2.0 mm/s to 9.5 mm/s on the target segment. This allows the linear trend prediction engine to register a rising trend and the chart to show a smooth curve.
+- **Simulate Crack Detection:** Increments the segment's crack count by 1, simulating structural degradation.
+- **Reset Segment:** Returns the selected segment back to its healthy baseline parameters and clears its defects.
+
+### Demo Scenarios (Orchestrated Presets)
 - **Degrade SEG-042 (Critical):** Automatically populates 20 progressive readings stepping from normal (2.0) to critical (8.5) vibration levels, increments crack counts, and fires work orders.
 - **Mass Track Degradation:** Degrades 5 random segments to warning/critical status to show concurrent issues on the grid.
-- **Reset All to Healthy:** Returns all segments to healthy defaults and clears any pending work orders.
+- **Reset All to Healthy:** Returns all 100 segments to healthy defaults and clears any pending work orders.
+
