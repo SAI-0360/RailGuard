@@ -20,3 +20,18 @@ export const verifyRepair = (segmentId, defectId, repairDescription) =>
   client.post("/api/verify-repair", { segmentId, defectId, repairDescription }).then(r => r.data);
 
 export const resetAll = () => client.post("/api/reset-all").then(r => r.data);
+
+// Monitoring control
+export const startMonitoring = () => client.post("/api/monitoring/start").then(r => r.data);
+export const stopMonitoring = () => client.post("/api/monitoring/stop").then(r => r.data);
+export const getMonitoringStatus = () => client.get("/api/monitoring/status").then(r => r.data);
+
+// Activity Log
+export const getActivityLog = (limit = 100) => client.get(`/api/activity-log?limit=${limit}`).then(r => r.data);
+export const clearActivityLog = () => client.post("/api/activity-log/clear").then(r => r.data);
+
+// Work Orders
+export const getWorkOrders = (status) => {
+  const params = status ? `?status=${status}` : "";
+  return client.get(`/api/work-orders${params}`).then(r => r.data);
+};

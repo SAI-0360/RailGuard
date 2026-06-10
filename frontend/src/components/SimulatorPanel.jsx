@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { simulateAction, resetAll } from "../services/api";
+import { simulateAction, resetAll, startMonitoring, stopMonitoring, getMonitoringStatus } from "../services/api";
 import { TOTAL_SEGMENTS, SEGMENT_ID_PREFIX, DEFAULT_SPIKE_VALUE } from "../utils/constants";
+import MonitoringToggle from "./MonitoringToggle";
 
 // Generate segment ID options (SEG-001 to SEG-100)
 const segmentOptions = Array.from({ length: TOTAL_SEGMENTS }, (_, i) =>
@@ -13,6 +14,43 @@ function SimulatorPanel({ onActionComplete }) {
   const [selectedSegmentId, setSelectedSegmentId] = useState("SEG-042");
   const [loadingAction, setLoadingAction] = useState(null); // tracks which button is loading
   const [lastResult, setLastResult] = useState(null);
+  const [monitoringActive, setMonitoringActive] = useState(false);
+  const [cycleCount, setCycleCount] = useState(0);
+
+  // Poll monitoring status every 5s
+  const fetchMonitoringStatus = useCallback(async () => {
+    try {
+      const data = await getMonitoringStatus();
+      setMonitoringActive(data.active);
+      setCycleCount(data.cycleCount || 0);
+    } catch (err) {
+      // silently ignore — backend may not have this route yet
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMonitoringStatus();
+    const id = setInterval(fetchMonitoringStatus, 5000);
+    return () => clearInterval(id);
+  }, [fetchMonitoringStatus]);
+
+  const handleStartMonitoring = async () => {
+    try {
+      await startMonitoring();
+      setMonitoringActive(true);
+    } catch (err) {
+      setLastResult({ success: false, message: "Failed to start monitoring" });
+    }
+  };
+
+  const handleStopMonitoring = async () => {
+    try {
+      await stopMonitoring();
+      setMonitoringActive(false);
+    } catch (err) {
+      setLastResult({ success: false, message: "Failed to stop monitoring" });
+    }
+  };
 
   const handleAction = async (actionName, action, value) => {
     setLoadingAction(actionName);
@@ -73,6 +111,23 @@ function SimulatorPanel({ onActionComplete }) {
             className="overflow-hidden"
           >
             <div className="mt-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 space-y-5">
+              {/* Autonomous Monitoring Toggle */}
+              <div>
+                <MonitoringToggle
+                  isActive={monitoringActive}
+                  onStart={handleStartMonitoring}
+                  onStop={handleStopMonitoring}
+                />
+                {monitoringActive && (
+                  <p className="text-[10px] text-gray-500 text-center mt-1.5 tracking-wide">
+                    Cycle #{cycleCount} — scanning every 10s
+                  </p>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-white/5" />
+
               {/* DEV ONLY Badge */}
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
