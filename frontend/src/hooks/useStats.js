@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getStats } from "../services/api";
 
 const POLLING_INTERVAL_MS = 5000;
@@ -8,7 +8,7 @@ function useStats() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  async function fetchStats() {
+  const fetchStats = useCallback(async () => {
     try {
       const data = await getStats();
       setStats(data);
@@ -20,7 +20,7 @@ function useStats() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     fetchStats();
@@ -28,9 +28,9 @@ function useStats() {
     const intervalId = setInterval(fetchStats, POLLING_INTERVAL_MS);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [fetchStats]);
 
-  return { stats, loading, error };
+  return { stats, loading, error, refetch: fetchStats };
 }
 
 export default useStats;
