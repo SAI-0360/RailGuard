@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_MODEL } = require("../utils/constants");
 const { FALLBACK_VERIFICATION } = require("../utils/fallbacks");
+const { logActivity } = require("./activityLogger");
 
 // Initialize Gemini client if API key is present
 const apiKey = process.env.GEMINI_API_KEY;
@@ -80,8 +81,11 @@ function cleanAndParseJson(rawText, fallback) {
 async function verifyRepair(originalDefect, repairDescription) {
   if (!genAI || !originalDefect || !repairDescription || typeof repairDescription !== "string" || !repairDescription.trim()) {
     console.warn("Gemini client not initialized or missing/invalid arguments. Using fallback verification.");
+    logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");
     return FALLBACK_VERIFICATION;
   }
+
+  logActivity("VERIFICATION", "VERIFY", `Verifying repair for defect: ${originalDefect.defectType} (${originalDefect.severity})...`, "info");
 
   try {
     const model = genAI.getGenerativeModel({
@@ -116,11 +120,18 @@ OUTPUT FORMAT:
   "statusRecommendation": "healthy | warning | critical"
 }`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = await result.response.text();
-    return cleanAndParseJson(responseText, FALLBACK_VERIFICATION);
+    const geminiResult = await model.generateContent(prompt);
+    const responseText = await geminiResult.response.text();
+    const result = cleanAndParseJson(responseText, FALLBACK_VERIFICATION);
+    if (result === FALLBACK_VERIFICATION) {
+      logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");
+    } else {
+      logActivity("VERIFICATION", "VERIFY", `Repair ${result.isVerified ? "VERIFIED" : "REJECTED"} (confidence: ${result.confidence})`, result.isVerified ? "info" : "warning");
+    }
+    return result;
   } catch (error) {
     console.error("Gemini verifyRepair API call failed:", error.message);
+    logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");
     return FALLBACK_VERIFICATION;
   }
 }

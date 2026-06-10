@@ -32,4 +32,72 @@ function calculateRisk(segment) {
   return { riskScore, status };
 }
 
-module.exports = { calculateRisk };
+/**
+ * Predict time until a segment reaches critical vibration threshold.
+ * Uses simple linear regression on vibration history.
+ * @param {Object} segment - TrackSegment object with vibrationHistory.
+ * @returns {Object|null} { predictedDaysToCritical, trendDirection, slopePerReading } or null.
+ */
+function predictTimeToCritical(segment) {
+  const history = segment.vibrationHistory;
+  if (!history || history.length < 5) return null;
+
+  const values = history.map(h => h.vibrationLevel);
+  const n = values.length;
+  const xMean = (n - 1) / 2;
+  const yMean = values.reduce((sum, v) => sum + v, 0) / n;
+
+  let numerator = 0;
+  let denominator = 0;
+  for (let i = 0; i < n; i++) {
+    numerator += (i - xMean) * (values[i] - yMean);
+    denominator += (i - xMean) ** 2;
+  }
+  if (denominator === 0) return null;
+
+  const slope = numerator / denominator;
+
+  // Not degrading — vibration stable or decreasing
+  if (slope <= 0) return null;
+
+  // Already critical
+  const current = values[values.length - 1];
+  if (current >= 7.0) {
+    return {
+      predictedDaysToCritical: 0,
+      trendDirection: "critical_now",
+      slopePerReading: parseFloat(slope.toFixed(4))
+    };
+  }
+
+  const readingsToThreshold = (7.0 - current) / slope;
+  const estimatedDays = Math.ceil(readingsToThreshold / 6); // ~6 readings/day
+  if (estimatedDays > 30) return null; // Too far out to be meaningful
+
+  return {
+    predictedDaysToCritical: estimatedDays,
+    trendDirection: "rising",
+    slopePerReading: parseFloat(slope.toFixed(4))
+  };
+}
+
+/**
+ * Generate a human-readable trend summary string.
+ * @param {Object} segment - TrackSegment object.
+ * @returns {string|null} Trend summary or null.
+ */
+function getTrendSummary(segment) {
+  const prediction = predictTimeToCritical(segment);
+  if (!prediction) return null;
+  if (prediction.predictedDaysToCritical === 0)
+    return "CRITICAL NOW — immediate attention required";
+  if (prediction.predictedDaysToCritical <= 3)
+    return `Predicted critical in ~${prediction.predictedDaysToCritical} days — urgent monitoring`;
+  if (prediction.predictedDaysToCritical <= 7)
+    return `Trending upward — ~${prediction.predictedDaysToCritical} days to threshold`;
+  if (prediction.predictedDaysToCritical <= 14)
+    return `Slow degradation detected — monitor closely (~${prediction.predictedDaysToCritical} days)`;
+  return null;
+}
+
+module.exports = { calculateRisk, predictTimeToCritical, getTrendSummary };
