@@ -35,3 +35,7 @@ export const getWorkOrders = (status) => {
   const params = status ? `?status=${status}` : "";
   return client.get(`/api/work-orders${params}`).then(r => r.data);
 };
+
+// Demo Scenarios
+export const triggerScenario = (scenario) =>
+  client.post("/api/demo/scenario", { scenario }).then(r => r.data);

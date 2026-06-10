@@ -13,6 +13,7 @@ const statsRoutes = require("./routes/statsRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const createMonitoringRoutes = require("./routes/monitoringRoutes");
 const createWorkOrderRoutes = require("./routes/workOrderRoutes");
+const demoRoutes = require("./routes/demoRoutes");
 const errorHandler = require("./middleware/errorHandler");
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ app.use("/api", statsRoutes);
 app.use("/api/activity-log", activityLogRoutes);
 app.use("/api/monitoring", createMonitoringRoutes({ startMonitoring, stopMonitoring, getMonitoringState }));
 app.use("/api/work-orders", createWorkOrderRoutes(workOrders));
+app.use("/api", demoRoutes);
 
 // Global error handler — must be last
 app.use(errorHandler);

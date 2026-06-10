@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { simulateAction, resetAll, startMonitoring, stopMonitoring, getMonitoringStatus } from "../services/api";
+import { simulateAction, resetAll, startMonitoring, stopMonitoring, getMonitoringStatus, triggerScenario } from "../services/api";
 import { TOTAL_SEGMENTS, SEGMENT_ID_PREFIX, DEFAULT_SPIKE_VALUE } from "../utils/constants";
 import MonitoringToggle from "./MonitoringToggle";
 
@@ -16,6 +16,7 @@ function SimulatorPanel({ onActionComplete }) {
   const [lastResult, setLastResult] = useState(null);
   const [monitoringActive, setMonitoringActive] = useState(false);
   const [cycleCount, setCycleCount] = useState(0);
+  const [selectedScenario, setSelectedScenario] = useState("critical_degrade");
 
   // Poll monitoring status every 5s
   const fetchMonitoringStatus = useCallback(async () => {
@@ -74,6 +75,25 @@ function SimulatorPanel({ onActionComplete }) {
       setLastResult({
         success: false,
         message: err?.response?.data?.error || "Action failed",
+      });
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleRunScenario = async (scenarioType) => {
+    setLoadingAction("scenario");
+    setLastResult(null);
+    try {
+      const result = await triggerScenario(scenarioType);
+      setLastResult({ success: true, message: result.message || "Scenario triggered successfully" });
+      if (onActionComplete) {
+        onActionComplete("scenario");
+      }
+    } catch (err) {
+      setLastResult({
+        success: false,
+        message: err?.response?.data?.error || "Failed to trigger scenario",
       });
     } finally {
       setLoadingAction(null);
@@ -214,6 +234,45 @@ function SimulatorPanel({ onActionComplete }) {
                   variant="danger"
                   onClick={() => handleAction("resetAll")}
                 />
+              </div>
+
+              {/* Divider before scenarios */}
+              <div className="border-t border-white/5" />
+
+              {/* Demo Scenarios Section */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                    Scenarios
+                  </span>
+                  <span className="text-xs text-gray-500">Preset Demo Orchestration</span>
+                </div>
+
+                <div className="flex gap-2">
+                  <select
+                    id="scenario-select"
+                    value={selectedScenario}
+                    onChange={(e) => setSelectedScenario(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239CA3AF' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: "no-repeat",
+                      backgroundPosition: "right 10px center",
+                    }}
+                  >
+                    <option value="critical_degrade" className="bg-gray-900 text-white">Degrade SEG-042 (Critical)</option>
+                    <option value="mass_degrade" className="bg-gray-900 text-white">Mass Track Degradation</option>
+                    <option value="clear_all" className="bg-gray-900 text-white">Reset All to Healthy</option>
+                  </select>
+
+                  <button
+                    onClick={() => handleRunScenario(selectedScenario)}
+                    disabled={loadingAction !== null}
+                    className="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 hover:border-indigo-500/60 text-indigo-300 font-semibold text-xs rounded-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Run
+                  </button>
+                </div>
               </div>
 
               {/* Result Feedback */}
