@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getSegment } from "../services/api";
 
 function useSelectedSegment() {
@@ -16,28 +16,27 @@ function useSelectedSegment() {
     setSelectedSegment(null);
   }
 
-  useEffect(() => {
+  const fetchSegment = useCallback(async () => {
     if (!selectedSegmentId) return;
-
-    async function fetchSegment() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await getSegment(selectedSegmentId);
-        setSelectedSegment(data.segment);
-      } catch (err) {
-        const message =
-          err?.response?.data?.error || err.message || "Failed to fetch segment";
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getSegment(selectedSegmentId);
+      setSelectedSegment(data.segment);
+    } catch (err) {
+      const message =
+        err?.response?.data?.error || err.message || "Failed to fetch segment";
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-
-    fetchSegment();
   }, [selectedSegmentId]);
 
-  return { selectedSegment, selectSegment, clearSelection, loading, error };
+  useEffect(() => {
+    fetchSegment();
+  }, [fetchSegment]);
+
+  return { selectedSegment, selectSegment, clearSelection, loading, error, refetch: fetchSegment };
 }
 
 export default useSelectedSegment;

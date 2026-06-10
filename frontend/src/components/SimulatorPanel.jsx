@@ -8,7 +8,7 @@ const segmentOptions = Array.from({ length: TOTAL_SEGMENTS }, (_, i) =>
   `${SEGMENT_ID_PREFIX}${String(i + 1).padStart(3, "0")}`
 );
 
-function SimulatorPanel() {
+function SimulatorPanel({ onActionComplete }) {
   const [isOpen, setIsOpen] = useState(true);
   const [selectedSegmentId, setSelectedSegmentId] = useState("SEG-042");
   const [loadingAction, setLoadingAction] = useState(null); // tracks which button is loading
@@ -28,6 +28,9 @@ function SimulatorPanel() {
           success: true,
           message: `${selectedSegmentId} → ${seg.status} (risk: ${seg.riskScore})`,
         });
+      }
+      if (onActionComplete) {
+        onActionComplete(actionName, selectedSegmentId);
       }
     } catch (err) {
       setLastResult({
