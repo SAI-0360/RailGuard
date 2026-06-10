@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_MODEL } = require("../utils/constants");
 const { FALLBACK_EXTRACTION, FALLBACK_EXPLANATION } = require("../utils/fallbacks");
+const { logActivity } = require("./activityLogger");
 
 // Initialize Gemini client if API key is present
 const apiKey = process.env.GEMINI_API_KEY;
@@ -78,8 +79,11 @@ function cleanAndParseJson(rawText, fallback) {
 async function extractDefect(reportText) {
   if (!genAI || !reportText || typeof reportText !== "string" || !reportText.trim()) {
     console.warn("Gemini client not initialized or empty/invalid report text. Using fallback extraction.");
+    logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
     return FALLBACK_EXTRACTION;
   }
+
+  logActivity("EXTRACTION", "EXTRACT", `Processing inspection report for defect extraction (${reportText.length} chars)...`, "info");
 
   try {
     const model = genAI.getGenerativeModel({
@@ -108,51 +112,87 @@ OUTPUT FORMAT:
 INSPECTION REPORT:
 ${reportText}`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = await result.response.text();
-    return cleanAndParseJson(responseText, FALLBACK_EXTRACTION);
+    const geminiResult = await model.generateContent(prompt);
+    const responseText = await geminiResult.response.text();
+    const result = cleanAndParseJson(responseText, FALLBACK_EXTRACTION);
+    if (result === FALLBACK_EXTRACTION) {
+      logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
+    } else {
+      logActivity("EXTRACTION", "EXTRACT", `Defect found: ${result.defectType}, severity ${result.severity.toUpperCase()}`, "info");
+    }
+    return result;
   } catch (error) {
     console.error("Gemini extractDefect API call failed:", error.message);
+    logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
     return FALLBACK_EXTRACTION;
   }
 }
 
 /**
- * Generates a 2-3 sentence risk explanation.
+ * Generates a 2-3 sentence risk explanation, optionally enriched
+ * with trend prediction and auto-dispatched work order context.
  * @param {Object} segment - The TrackSegment object.
+ * @param {Object|null} [prediction=null] - Output of predictTimeToCritical(): { predictedDaysToCritical, trendDirection, slopePerReading }.
+ * @param {Object|null} [workOrder=null] - Auto-dispatched work order: { workOrderId, priority, ... }.
  * @returns {Promise<string>} Gemini generated explanation.
  */
-async function generateRiskExplanation(segment) {
+async function generateRiskExplanation(segment, prediction = null, workOrder = null) {
   if (!genAI || !segment) {
     console.warn("Gemini client not initialized or segment missing. Using fallback explanation.");
+    logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment ? segment.segmentId : "unknown segment"}`, "warning");
     return FALLBACK_EXPLANATION;
   }
 
   try {
     const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
+    const trendLine = prediction
+      ? `\nTrend: Vibration rising at ${prediction.slopePerReading} mm/s per reading. ${
+          prediction.predictedDaysToCritical === 0
+            ? "Already at critical threshold."
+            : `Predicted critical in ~${prediction.predictedDaysToCritical} days.`
+        }`
+      : "";
+    const workOrderLine = workOrder
+      ? `\nWork Order: ${workOrder.workOrderId} auto-dispatched with ${workOrder.priority} priority.`
+      : "";
+
     const prompt = `You are a railway safety analyst for the RailGuard monitoring dashboard.
 
-TASK: Write a plain-English explanation of why segment ${segment.segmentId} has a risk score of ${segment.riskScore}/100 and status "${segment.status}".
+TASK: Write a plain-English explanation of why this segment has its current risk level.
 
 SEGMENT DATA:
-- Vibration Level: ${segment.vibrationLevel} mm/s RMS
-- Active Cracks Count: ${segment.crackCount}
-- Historical Incidents: ${segment.incidentCount}
-- Days Since Last Inspection: ${segment.daysSinceInspection}
+Segment: ${segment.segmentId}
+Current Status: ${segment.status} (risk score: ${segment.riskScore})
+Vibration: ${segment.vibrationLevel} mm/s (critical threshold: 7.0)
+Cracks: ${segment.crackCount} unresolved
+Incidents: ${segment.incidentCount} historical
+Days Since Inspection: ${segment.daysSinceInspection}${trendLine}${workOrderLine}
 
 RULES:
 - Output exactly 2-3 sentences. No more. No less.
-- Every sentence must cite at least one specific numeric value from the segment data above.
+- Every sentence must cite at least one specific numeric value from the data above.
 - Focus on which factors drive the risk score up (vibration, cracks, incidents, age).
+- If trend data is provided, mention the prediction.
+- If a work order exists, mention it was auto-dispatched.
 - Do NOT include repair recommendations or action items.
 - Write in plain text only — no JSON, no bullet points, no headers.`;
 
     const result = await model.generateContent(prompt);
     const responseText = await result.response.text();
-    return responseText.trim() || FALLBACK_EXPLANATION;
+    const explanation = responseText.trim();
+    if (!explanation) {
+      logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment.segmentId}`, "warning");
+      return FALLBACK_EXPLANATION;
+    }
+    logActivity("EXTRACTION", "RISK_CALC",
+      `Generated risk narration for ${segment.segmentId} (risk: ${segment.riskScore}${prediction ? `, trend: ${prediction.trendDirection}` : ""})`,
+      "info"
+    );
+    return explanation;
   } catch (error) {
     console.error("Gemini generateRiskExplanation API call failed:", error.message);
+    logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment.segmentId}`, "warning");
     return FALLBACK_EXPLANATION;
   }
 }
