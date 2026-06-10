@@ -32,10 +32,18 @@ const CONSTANTS = {
 
   // Gemini
   GEMINI_MODEL: "gemini-2.0-flash",
+  GEMINI_TIMEOUT_MS: 10000,         // Abort waiting on Gemini after 10s, fall back
+  GEMINI_RETRY_DELAY_MS: 2000,      // Wait before single retry on transient errors
 
   // Autonomous monitoring
   MONITORING_INTERVAL_MS: 10000,    // Monitoring loop interval (10s)
   MAX_LOG_ENTRIES: 500,             // Activity log buffer size
+
+  // Trend prediction
+  VIBRATION_CRITICAL_THRESHOLD: 7.0,   // Critical vibration level for prediction
+  MIN_HISTORY_FOR_PREDICTION: 5,        // Min data points for linear regression
+  MAX_PREDICTION_DAYS: 30,              // Ignore predictions beyond 30 days
+  READINGS_PER_DAY_ESTIMATE: 6,         // ~6 monitoring cycles per day
 };
 
 module.exports = CONSTANTS;

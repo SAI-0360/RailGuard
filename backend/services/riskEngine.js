@@ -8,6 +8,10 @@ const {
   WEIGHT_AGE,
   THRESHOLD_HEALTHY_MAX,
   THRESHOLD_WARNING_MAX,
+  VIBRATION_CRITICAL_THRESHOLD,
+  MIN_HISTORY_FOR_PREDICTION,
+  MAX_PREDICTION_DAYS,
+  READINGS_PER_DAY_ESTIMATE,
 } = require("../utils/constants");
 
 function calculateRisk(segment) {
@@ -40,7 +44,7 @@ function calculateRisk(segment) {
  */
 function predictTimeToCritical(segment) {
   const history = segment.vibrationHistory;
-  if (!history || history.length < 5) return null;
+  if (!history || history.length < MIN_HISTORY_FOR_PREDICTION) return null;
 
   const values = history.map(h => h.vibrationLevel);
   const n = values.length;
@@ -62,7 +66,7 @@ function predictTimeToCritical(segment) {
 
   // Already critical
   const current = values[values.length - 1];
-  if (current >= 7.0) {
+  if (current >= VIBRATION_CRITICAL_THRESHOLD) {
     return {
       predictedDaysToCritical: 0,
       trendDirection: "critical_now",
@@ -70,9 +74,9 @@ function predictTimeToCritical(segment) {
     };
   }
 
-  const readingsToThreshold = (7.0 - current) / slope;
-  const estimatedDays = Math.ceil(readingsToThreshold / 6); // ~6 readings/day
-  if (estimatedDays > 30) return null; // Too far out to be meaningful
+  const readingsToThreshold = (VIBRATION_CRITICAL_THRESHOLD - current) / slope;
+  const estimatedDays = Math.ceil(readingsToThreshold / READINGS_PER_DAY_ESTIMATE);
+  if (estimatedDays > MAX_PREDICTION_DAYS) return null; // Too far out to be meaningful
 
   return {
     predictedDaysToCritical: estimatedDays,
