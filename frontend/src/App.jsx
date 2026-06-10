@@ -4,9 +4,13 @@ import CellGrid from './components/CellGrid';
 import TelemetryPanel from './components/TelemetryPanel';
 import SimulatorPanel from './components/SimulatorPanel';
 import AlertBanner from './components/AlertBanner';
+import AgentActivityLog from './components/AgentActivityLog';
+import WorkOrderPanel from './components/WorkOrderPanel';
 import useSegments from './hooks/useSegments';
 import useStats from './hooks/useStats';
 import useSelectedSegment from './hooks/useSelectedSegment';
+import useActivityLog from './hooks/useActivityLog';
+import useWorkOrders from './hooks/useWorkOrders';
 
 export default function App() {
   const { segments, loading: loadingSegments, error: errorSegments, refetch: refetchSegments } = useSegments();
@@ -19,6 +23,8 @@ export default function App() {
     error: errorSelected,
     refetch: refetchSelected
   } = useSelectedSegment();
+  const { logs } = useActivityLog();
+  const { workOrders } = useWorkOrders();
 
   const handleActionComplete = (actionName, segmentId) => {
     refetchSegments();
@@ -100,6 +106,9 @@ export default function App() {
             ) : (
               <CellGrid segments={segments} onSelect={selectSegment} />
             )}
+
+            {/* Agent Activity Log — always visible below the grid */}
+            <AgentActivityLog logs={logs} />
           </div>
 
           {/* Right sidebar details panel / simulator (30% width on large screens) */}
@@ -139,8 +148,9 @@ export default function App() {
             </div>
 
             {/* Bottom Section */}
-            <div className="shrink-0">
+            <div className="shrink-0 flex flex-col gap-6">
               <SimulatorPanel onActionComplete={handleActionComplete} />
+              <WorkOrderPanel workOrders={workOrders} />
             </div>
           </div>
         </main>

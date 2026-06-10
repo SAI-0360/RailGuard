@@ -6,6 +6,7 @@ import DefectList from './DefectList';
 import AiExplanation from './AiExplanation';
 import ExtractionForm from './ExtractionForm';
 import VerificationForm from './VerificationForm';
+import TrendBadge from './TrendBadge';
 
 /**
  * TelemetryPanel — Detailed view of a single track segment.
@@ -43,7 +44,9 @@ export default function TelemetryPanel({
     incidentCount,
     daysSinceInspection,
     activeDefects = [],
-    vibrationHistory = []
+    vibrationHistory = [],
+    prediction = null,
+    trendSummary = null
   } = segment;
 
   const handleExtracted = (response) => {
@@ -89,6 +92,13 @@ export default function TelemetryPanel({
           </svg>
         </button>
       </div>
+
+      {/* Trend Prediction Badge */}
+      {prediction && (
+        <div className="-mt-2">
+          <TrendBadge prediction={prediction} />
+        </div>
+      )}
 
       {/* Main stats block (Risk Gauge + Numbers) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
