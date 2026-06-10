@@ -53,14 +53,17 @@ router.post("/segments/:segmentId/simulate", (req, res) => {
 
   if (action === "spike") {
     seg.vibrationLevel = value;
-    seg.vibrationHistory.push({
-      timestamp: new Date().toISOString(),
-      vibrationLevel: value,
-      temperature: parseFloat((35 + Math.random() * 5).toFixed(2)),
-      crackDetected: false
-    });
-    if (seg.vibrationHistory.length > MAX_VIBRATION_HISTORY) {
-      seg.vibrationHistory.shift();
+    seg.vibrationHistory = [];
+    const now = Date.now();
+    for (let j = 0; j < MAX_VIBRATION_HISTORY; j++) {
+      const baseVibe = 2.0 + (j * (value - 2.0) / (MAX_VIBRATION_HISTORY - 1));
+      const vibe = parseFloat((baseVibe + (Math.random() - 0.5) * 0.2).toFixed(2));
+      seg.vibrationHistory.push({
+        timestamp: new Date(now - (MAX_VIBRATION_HISTORY - j) * 10 * 1000).toISOString(),
+        vibrationLevel: vibe,
+        temperature: parseFloat((35 + Math.random() * 5).toFixed(2)),
+        crackDetected: false
+      });
     }
 
   } else if (action === "crack") {
