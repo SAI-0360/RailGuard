@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { GEMINI_MODEL } = require("../utils/constants");
+const { GEMINI_MODEL, GEMINI_TIMEOUT_MS, GEMINI_RETRY_DELAY_MS } = require("../utils/constants");
 const { FALLBACK_VERIFICATION, DEMO_FALLBACK_VERIFICATION } = require("../utils/fallbacks");
 const { logActivity } = require("./activityLogger");
 
@@ -8,6 +8,38 @@ const apiKey = process.env.GEMINI_API_KEY;
 let genAI = null;
 if (apiKey && apiKey !== "your_key_here") {
   genAI = new GoogleGenerativeAI(apiKey);
+}
+
+/**
+ * Call Gemini with a hard timeout and a single retry on transient errors
+ * (rate limits, network hiccups, timeouts). Throws if both attempts fail.
+ * @param {Object} model - Gemini GenerativeModel instance.
+ * @param {string} prompt - The full prompt text.
+ * @returns {Promise<string>} Raw response text.
+ */
+async function callGeminiWithRetry(model, prompt) {
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const result = await Promise.race([
+        model.generateContent(prompt),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Gemini call timed out after ${GEMINI_TIMEOUT_MS}ms`)), GEMINI_TIMEOUT_MS)
+        )
+      ]);
+      return await result.response.text();
+    } catch (error) {
+      lastError = error;
+      const transient = /429|503|timed out|fetch/i.test(error.message);
+      if (attempt === 1 && transient) {
+        console.warn(`Gemini call failed (attempt 1, transient): ${error.message}. Retrying in ${GEMINI_RETRY_DELAY_MS}ms...`);
+        await new Promise(r => setTimeout(r, GEMINI_RETRY_DELAY_MS));
+        continue;
+      }
+      throw lastError;
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -125,8 +157,7 @@ OUTPUT FORMAT:
   "statusRecommendation": "healthy | warning | critical"
 }`;
 
-    const geminiResult = await model.generateContent(prompt);
-    const responseText = await geminiResult.response.text();
+    const responseText = await callGeminiWithRetry(model, prompt);
     const result = cleanAndParseJson(responseText, fallback);
     if (result === fallback) {
       logActivity("VERIFICATION", "VERIFY", "Gemini unavailable — using fallback verification", "warning");

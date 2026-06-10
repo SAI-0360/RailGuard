@@ -32,6 +32,8 @@ const CONSTANTS = {
 
   // Gemini
   GEMINI_MODEL: "gemini-2.0-flash",
+  GEMINI_TIMEOUT_MS: 10000,         // Abort waiting on Gemini after 10s, fall back
+  GEMINI_RETRY_DELAY_MS: 2000,      // Wait before single retry on transient errors
 
   // Autonomous monitoring
   MONITORING_INTERVAL_MS: 10000,    // Monitoring loop interval (10s)
