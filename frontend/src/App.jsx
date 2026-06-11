@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import SituationBar from './components/SituationBar';
+import RouteFilter from './components/RouteFilter';
 import CriticalBanner from './components/CriticalBanner';
 import AttentionQueue from './components/AttentionQueue';
 import TrackStrip from './components/TrackStrip';
@@ -27,7 +28,10 @@ import useMonitoring from './hooks/useMonitoring';
  */
 function Console() {
   const { user, logout } = useAuth();
-  const { segments, loading: loadingSegments, error: errorSegments, refetch: refetchSegments } = useSegments();
+  // Route scope: null = default full-corridor view; otherwise the backend
+  // JIT-computes segments for { startStation, endStation } from raw track data
+  const [routeQuery, setRouteQuery] = useState(null);
+  const { segments, routeInfo, loading: loadingSegments, error: errorSegments, refetch: refetchSegments } = useSegments(routeQuery);
   const { stats, error: errorStats, refetch: refetchStats } = useStats();
   const {
     selectedSegment,
@@ -119,6 +123,11 @@ function Console() {
             selectedId={selectedSegment?.segmentId}
             onSelect={selectSegment}
             loading={loadingSegments}
+          />
+          <RouteFilter
+            routeQuery={routeQuery}
+            routeInfo={routeInfo}
+            onRouteChange={setRouteQuery}
           />
           <TrackStrip
             segments={visibleSegments}

@@ -24,7 +24,11 @@ export const login = (email, password) =>
   client.post("/api/auth/login", { email, password }).then(r => r.data);
 export const getMe = () => client.get("/api/auth/me").then(r => r.data);
 
-export const getSegments = () => client.get("/api/segments").then(r => r.data);
+// Route filter params are optional: { startStation, endStation }
+export const getSegments = (routeParams) =>
+  client.get("/api/segments", { params: routeParams || undefined }).then(r => r.data);
+
+export const getStations = () => client.get("/api/stations").then(r => r.data);
 
 export const getSegment = (id) => client.get(`/api/segments/${id}`).then(r => r.data);
 
