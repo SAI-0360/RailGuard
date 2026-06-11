@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { progressWorkOrder } from '../services/api';
-import { useAuth } from '../context/AuthContext';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -10,13 +8,6 @@ const WORKER_STATUS_META = {
   acknowledged: { label: 'acknowledged', chip: 'chip bg-accent/10 text-accent' },
   in_progress: { label: 'in progress', chip: 'chip bg-accent/10 text-accent' },
   done: { label: 'done', chip: 'chip bg-ok/10 text-ok' },
-};
-
-// The next human action for each state — the one-tap "I'm on it" moment
-const NEXT_ACTION = {
-  unacknowledged: { label: "I'm on it", className: 'btn-accent' },
-  acknowledged: { label: 'Start work', className: 'btn-ghost' },
-  in_progress: { label: 'Mark done', className: 'btn-ghost' },
 };
 
 /**
@@ -48,45 +39,28 @@ function formatTime(iso) {
 }
 
 /**
- * WorkOrderPipeline — agent-drafted work orders grouped by lifecycle stage.
- * Hairline-divided rows, not nested cards; completed orders recede.
+ * WorkOrderPipeline — the SSE operations console's read-only view of
+ * agent-drafted work orders, grouped by lifecycle stage. Hairline-divided
+ * rows, not nested cards; completed orders recede.
  *
- * Each pending order is a dispatch instrument: assigned worker, a live SLA
- * countdown, and the human-in-the-loop controls. The SLA escalates (amber
- * inside the final hour, red when blown) only while no one has responded —
- * the moment the worker taps "I'm on it" the clock keeps counting but stops
- * shouting. Clicking a card opens the segment in the Focus Panel and unfolds
- * the order's dossier: the telemetry snapshot captured when the issue fired,
- * and the full status timeline.
+ * This is an oversight surface, not a field surface: the JE drives the
+ * lifecycle from their mobile field view, so the pipeline shows the JE's
+ * progress as a status chip but never the action buttons. Each pending order
+ * is a dispatch instrument — assigned worker, a live SLA countdown that
+ * escalates (amber inside the final hour, red when blown) until the JE
+ * responds. When the JE reports done with a field report, the SSE can open it
+ * and verify the repair with AI. Clicking a card opens the segment in the
+ * Focus Panel and unfolds the order's dossier: the telemetry snapshot captured
+ * when the issue fired, and the full status timeline.
  */
-export default function WorkOrderPipeline({ workOrders = [], onSelectSegment }) {
-  const { user } = useAuth();
+export default function WorkOrderPipeline({ workOrders = [], onSelectSegment, onVerifyReport }) {
   const reduceMotion = useReducedMotion();
   const [expandedId, setExpandedId] = useState(null);
-  const [busyId, setBusyId] = useState(null);
-  const [actionError, setActionError] = useState(null);
-  // Optimistic overrides between polls: progress responses land here and the
-  // 5s workOrders poll naturally supersedes them.
-  const [overrides, setOverrides] = useState({});
 
-  const merged = workOrders.map((wo) => overrides[wo.workOrderId] || wo);
-  const pending = merged.filter((wo) => wo.status === 'pending');
-  const completed = merged.filter((wo) => wo.status === 'completed');
+  const pending = workOrders.filter((wo) => wo.status === 'pending');
+  const completed = workOrders.filter((wo) => wo.status === 'completed');
 
   const now = useNowTicker(pending.some((wo) => wo.deadline));
-
-  const handleProgress = async (order) => {
-    setBusyId(order.workOrderId);
-    setActionError(null);
-    try {
-      const data = await progressWorkOrder(order.workOrderId);
-      setOverrides((prev) => ({ ...prev, [order.workOrderId]: data.workOrder }));
-    } catch (err) {
-      setActionError(err?.response?.data?.error || 'Could not update work order');
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   const handleCardClick = (order) => {
     setExpandedId((cur) => (cur === order.workOrderId ? null : order.workOrderId));
@@ -102,14 +76,8 @@ export default function WorkOrderPipeline({ workOrders = [], onSelectSegment }) 
         )}
       </div>
 
-      {actionError && (
-        <p className="mx-4 mt-2 px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit">
-          {actionError}
-        </p>
-      )}
-
       <div className="overflow-y-auto max-h-[420px]">
-        {merged.length === 0 ? (
+        {workOrders.length === 0 ? (
           <p className="text-xs text-ink-3 px-4 py-6 text-center">
             No work orders. The agent drafts them automatically when a segment degrades.
           </p>
@@ -120,13 +88,11 @@ export default function WorkOrderPipeline({ workOrders = [], onSelectSegment }) 
                 key={order.workOrderId}
                 order={order}
                 now={now}
-                user={user}
                 expanded={expandedId === order.workOrderId}
-                busy={busyId === order.workOrderId}
                 reduceMotion={reduceMotion}
                 onCardClick={() => handleCardClick(order)}
-                onProgress={() => handleProgress(order)}
                 onSelectSegment={onSelectSegment}
+                onVerifyReport={onVerifyReport}
               />
             ))}
             {completed.length > 0 && (
@@ -141,13 +107,11 @@ export default function WorkOrderPipeline({ workOrders = [], onSelectSegment }) 
                 key={order.workOrderId}
                 order={order}
                 now={now}
-                user={user}
                 expanded={expandedId === order.workOrderId}
-                busy={false}
                 reduceMotion={reduceMotion}
                 onCardClick={() => handleCardClick(order)}
-                onProgress={null}
                 onSelectSegment={onSelectSegment}
+                onVerifyReport={onVerifyReport}
                 muted
               />
             ))}
@@ -159,23 +123,18 @@ export default function WorkOrderPipeline({ workOrders = [], onSelectSegment }) 
 }
 
 function WorkOrderRow({
-  order, now, user, expanded, busy, reduceMotion, muted = false,
-  onCardClick, onProgress, onSelectSegment,
+  order, now, expanded, reduceMotion, muted = false,
+  onCardClick, onSelectSegment, onVerifyReport,
 }) {
   const isUrgent = order.priority === 'urgent';
   const workerStatus = order.workerStatus || 'unacknowledged';
   const statusMeta = WORKER_STATUS_META[workerStatus] || WORKER_STATUS_META.unacknowledged;
   const acknowledged = workerStatus !== 'unacknowledged';
 
-  // Only the assigned worker drives the lifecycle (admins and other workers see status only)
-  const canAct =
-    !muted &&
-    onProgress &&
-    workerStatus !== 'done' &&
-    user &&
-    user.role !== 'admin' &&
-    (user.name === order.assignedWorker || user.email === order.assignedWorkerEmail);
-  const nextAction = NEXT_ACTION[workerStatus];
+  // The JE drives the lifecycle from their field view; this console only
+  // observes their progress (the status chip) — no action buttons here.
+  // Once the JE reports done with a field report, the SSE can verify it.
+  const hasReport = !muted && workerStatus === 'done' && Boolean(order.completionReport);
 
   return (
     <div className={muted ? 'opacity-50' : ''}>
@@ -222,18 +181,30 @@ function WorkOrderRow({
           />
         )}
 
-        {canAct && nextAction && (
-          <div className="mt-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation(); // act without toggling the dossier
-                onProgress();
-              }}
-              disabled={busy}
-              className={`${nextAction.className} px-3 py-1.5`}
-            >
-              {busy ? 'Updating' : nextAction.label}
-            </button>
+        {/* JE field report — the worker's account of the repair, awaiting the
+            SSE's AI verification. Highlighted because it's the SSE's next move. */}
+        {hasReport && (
+          <div className="mt-2 rounded-lg border border-accent/25 bg-accent/[0.06] px-3 py-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-accent">
+                JE Field Report
+              </span>
+              <span className="chip bg-ok/10 text-ok">done</span>
+            </div>
+            <p className="text-[11px] text-ink-2 leading-relaxed whitespace-pre-wrap">
+              {order.completionReport}
+            </p>
+            {onVerifyReport && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation(); // verify without toggling the dossier
+                  onVerifyReport(order);
+                }}
+                className="btn-accent px-3 py-1.5 mt-2"
+              >
+                Verify with AI →
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -6,7 +6,7 @@ import React, { useEffect, useRef } from 'react';
  * (Emil's frequency rule: constant updates get no animation); agent
  * identity carries the interactive accent so "who did what" reads at a glance.
  */
-export default function ActivityLedger({ logs = [], live = false }) {
+export default function ActivityLedger({ logs = [], live = false, title = 'Agent activity' }) {
   const containerRef = useRef(null);
 
   const formatTime = (isoString) => {
@@ -30,7 +30,7 @@ export default function ActivityLedger({ logs = [], live = false }) {
   return (
     <section className="panel">
       <div className="flex items-center justify-between px-4 py-3 border-b border-line">
-        <h2 className="panel-title">Agent activity</h2>
+        <h2 className="panel-title">{title}</h2>
         {live && (
           <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-accent">
             <span className="h-1.5 w-1.5 rounded-full bg-accent animate-live" />

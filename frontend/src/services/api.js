@@ -34,6 +34,9 @@ export const getSegment = (id) => client.get(`/api/segments/${id}`).then(r => r.
 
 export const getStats = () => client.get("/api/stats").then(r => r.data);
 
+// Corridor Health Index — last 10 days, for the DEN HQ trend chart
+export const getChiHistory = () => client.get("/api/chi-history").then(r => r.data);
+
 export const simulateAction = (id, action, value) =>
   client.post(`/api/segments/${id}/simulate`, { action, value }).then(r => r.data);
 
@@ -62,8 +65,11 @@ export const getWorkOrders = (status) => {
 
 // Advance a work order's worker status one step:
 // unacknowledged → acknowledged → in_progress → done
-export const progressWorkOrder = (workOrderId) =>
-  client.post(`/api/work-orders/${workOrderId}/progress`).then(r => r.data);
+// On the final (done) step the JE may attach a field report for SSE verification.
+export const progressWorkOrder = (workOrderId, completionReport) =>
+  client
+    .post(`/api/work-orders/${workOrderId}/progress`, completionReport ? { completionReport } : {})
+    .then(r => r.data);
 
 // Demo Scenarios
 export const triggerScenario = (scenario) =>

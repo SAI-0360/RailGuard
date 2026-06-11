@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { isAdminRole, roleLabel } from '../utils/roles';
 
 /**
  * SituationBar — persistent system truth at the top of the console.
@@ -74,12 +75,12 @@ function AgentStatus({ monitoring }) {
 
 /** Operator identity: name, role chip, sign out. */
 function Identity({ user, onLogout }) {
-  const isAdmin = user.role === 'admin';
+  const senior = isAdminRole(user.role);
   return (
     <div className="flex items-center gap-2 pl-4 border-l border-line">
       <span className="hidden lg:block text-xs text-ink-2">{user.name}</span>
-      <span className={`chip ${isAdmin ? 'bg-accent/10 text-accent' : 'bg-surface-3 text-ink-2'}`}>
-        {user.role}
+      <span className={`chip ${senior ? 'bg-accent/10 text-accent' : 'bg-surface-3 text-ink-2'}`}>
+        {roleLabel(user.role)}
       </span>
       <button onClick={onLogout} className="btn-ghost px-2.5 py-1">
         Sign out

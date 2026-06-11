@@ -17,7 +17,7 @@ import { getStatusColors } from '../utils/statusColors';
  * Vital strip, linear risk meter with threshold ticks, telemetry chart,
  * honest risk decomposition (real model weights), AI analysis, defects, actions.
  */
-export default function FocusPanel({ segment, loading, canAct = true, onClose, onDefectExtracted, onRepairVerified }) {
+export default function FocusPanel({ segment, loading, canAct = true, canVerify = false, onClose, onDefectExtracted, onRepairVerified, verifyPrefill = null }) {
   const reduceMotion = useReducedMotion();
   const [aiExplanation, setAiExplanation] = useState(null);
   const [tab, setTab] = useState('overview');
@@ -170,20 +170,28 @@ export default function FocusPanel({ segment, loading, canAct = true, onClose, o
 
               <DefectList defects={activeDefects} segmentId={segmentId} />
 
-              {/* Action rail: log a report, verify a repair (admin role; backend enforces) */}
+              {/* Action rail (backend enforces): inspection logging is senior
+                  staff (DEN/SSE); repair verification is the SSE's sign-off. */}
               {canAct ? (
                 <div className="space-y-4 border-t border-line pt-4">
                   <ExtractionForm segmentId={segmentId} onExtracted={handleExtracted} />
-                  <VerificationForm
-                    segmentId={segmentId}
-                    defects={activeDefects}
-                    onVerified={onRepairVerified}
-                  />
+                  {canVerify ? (
+                    <VerificationForm
+                      segmentId={segmentId}
+                      defects={activeDefects}
+                      onVerified={onRepairVerified}
+                      prefill={verifyPrefill && verifyPrefill.segmentId === segmentId ? verifyPrefill : null}
+                    />
+                  ) : (
+                    <p className="text-[11px] text-ink-3">
+                      Repair verification is restricted to the SSE (Senior Section Engineer).
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="border-t border-line pt-4 text-[11px] text-ink-3">
-                  Inspection logging and repair verification require the admin role.
-                  Report findings to your operations admin.
+                  Inspection logging and repair verification require senior (DEN/SSE) role.
+                  Report findings to your section engineer.
                 </p>
               )}
             </>

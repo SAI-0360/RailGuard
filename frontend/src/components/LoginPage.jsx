@@ -5,11 +5,23 @@ import { useAuth } from '../context/AuthContext';
 
 /** Demo accounts surfaced for the hackathon demo. Click to fill. */
 const DEMO_ACCOUNTS = [
-  { label: 'admin', email: 'admin@railguard.com', password: 'admin123' },
-  { label: 'worker', email: 'worker1@railguard.com', password: 'worker123' },
-  { label: 'worker', email: 'worker2@railguard.com', password: 'worker123' },
-  { label: 'worker', email: 'worker3@railguard.com', password: 'worker123' },
+  { badge: 'DEN', email: 'den@railguard.in', password: 'den123' },
+  { badge: 'SSE', email: 'sse@railguard.in', password: 'sse123' },
+  { badge: 'JE', email: 'je1@railguard.in', password: 'je1123' },
+  { badge: 'JE', email: 'je2@railguard.in', password: 'je2123' },
+  { badge: 'JE', email: 'je3@railguard.in', password: 'je3123' },
 ];
+
+/** Pre-role-rework account, kept as a muted fallback. */
+const LEGACY_ACCOUNT = { badge: 'LEGACY', email: 'admin@railguard.com', password: 'admin123' };
+
+// Senior roles (DEN/SSE) wear the accent chip; JE is muted; legacy is dimmest.
+const badgeChipClass = (badge) =>
+  badge === 'DEN' || badge === 'SSE'
+    ? 'bg-accent/10 text-accent'
+    : badge === 'LEGACY'
+      ? 'bg-surface-2 text-ink-3'
+      : 'bg-surface-3 text-ink-2';
 
 /**
  * LoginPage — operator sign-in for the RailGuard console.
@@ -135,22 +147,31 @@ export default function LoginPage() {
                   className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left
                     hover:bg-surface-2 transition-colors duration-150 cursor-pointer"
                 >
-                  <span
-                    className={`chip ${
-                      account.label === 'admin'
-                        ? 'bg-accent/10 text-accent'
-                        : 'bg-surface-3 text-ink-2'
-                    }`}
-                  >
-                    {account.label}
+                  <span className={`chip w-12 justify-center ${badgeChipClass(account.badge)}`}>
+                    {account.badge}
                   </span>
                   <span className="font-mono text-[11px] text-ink-2">{account.email}</span>
                 </button>
               ))}
             </div>
             <p className="text-[10px] text-ink-3 mt-2">
-              Passwords: admin123 / worker123. Click an account to fill the form.
+              Passwords: den123 / sse123 / je1123. Click an account to fill.
             </p>
+
+            {/* Legacy fallback — pre-role-rework account, intentionally muted */}
+            <div className="mt-3 pt-3 border-t border-line/60">
+              <button
+                type="button"
+                onClick={() => fillDemo(LEGACY_ACCOUNT)}
+                className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left opacity-60
+                  hover:opacity-100 hover:bg-surface-2 transition-[opacity,background-color] duration-150 cursor-pointer"
+              >
+                <span className={`chip w-12 justify-center ${badgeChipClass(LEGACY_ACCOUNT.badge)}`}>
+                  {LEGACY_ACCOUNT.badge}
+                </span>
+                <span className="font-mono text-[11px] text-ink-3">{LEGACY_ACCOUNT.email}</span>
+              </button>
+            </div>
           </div>
         </div>
       </motion.div>

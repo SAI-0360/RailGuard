@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import SituationBar from './components/SituationBar';
@@ -13,7 +13,10 @@ import WorkOrderPipeline from './components/WorkOrderPipeline';
 import DrillPanel from './components/DrillPanel';
 import LoginPage from './components/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import JEFieldView from './components/JEFieldView';
+import DENCommandView from './components/DENCommandView';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { isAdminRole, isSSERole, isJERole, isDENRole } from './utils/roles';
 import useSegments from './hooks/useSegments';
 import useStats from './hooks/useStats';
 import useSelectedSegment from './hooks/useSelectedSegment';
@@ -55,8 +58,13 @@ function Console() {
   const { logs } = useActivityLog();
   const { workOrders } = useWorkOrders();
   const monitoring = useMonitoring();
+  // "Verify with AI →" from a work order: focus the segment and seed the
+  // verification form with the JE's field report. Tagged with segmentId so the
+  // form only pre-fills for the matching segment; key re-seeds on each click.
+  const [verifyPrefill, setVerifyPrefill] = useState(null);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminRole(user?.role); // den / sse (or legacy admin): full network + drill
+  const isSSE = isSSERole(user?.role);     // sse (or legacy admin): may verify repairs
 
   // Worker scope: only assigned segments exist in their console
   const assignedSet = useMemo(
@@ -100,6 +108,15 @@ function Console() {
     refetchSegments();
     refetchStats();
     refetchSelected();
+  };
+
+  const handleVerifyReport = (order) => {
+    selectSegment(order.segmentId);
+    setVerifyPrefill({
+      segmentId: order.segmentId,
+      text: order.completionReport || '',
+      key: `${order.workOrderId}-${Date.now()}`,
+    });
   };
 
   const errorMessage = errorSegments || errorStats || errorSelected;
@@ -200,15 +217,54 @@ function Console() {
             segment={selectedSegment}
             loading={loadingSelected}
             canAct={isAdmin}
+            canVerify={isSSE}
             onClose={clearSelection}
             onDefectExtracted={refreshAll}
             onRepairVerified={refreshAll}
+            verifyPrefill={verifyPrefill}
           />
-          <WorkOrderPipeline workOrders={visibleWorkOrders} onSelectSegment={selectSegment} />
+          <WorkOrderPipeline
+            workOrders={visibleWorkOrders}
+            onSelectSegment={selectSegment}
+            onVerifyReport={isSSE ? handleVerifyReport : null}
+          />
           {/* Drill mode is an admin instrument; workers never see synthetic controls */}
           {isAdmin && <DrillPanel onActionComplete={handleActionComplete} />}
         </div>
       </main>
+    </div>
+  );
+}
+
+/**
+ * RoleHome — routes by role after auth:
+ *   den            → read-only HQ command terminal
+ *   sse / admin    → full operations console
+ *   je / worker    → mobile field view
+ * An unrecognized role is signed out; ProtectedRoute then sends it to /login.
+ */
+function RoleHome() {
+  const { user } = useAuth();
+  const role = user?.role;
+  if (isDENRole(role)) return <DENCommandView />;
+  if (isSSERole(role)) return <Console />; // sse + legacy admin
+  if (isJERole(role)) return <JEFieldView />; // je + legacy worker
+  return <UnknownRoleRedirect />;
+}
+
+/**
+ * UnknownRoleRedirect — clears the session for an unrecognized role. Once the
+ * user is null, the wrapping ProtectedRoute redirects to /login (no manual
+ * navigation, so there's no bounce-back loop with LoginPage).
+ */
+function UnknownRoleRedirect() {
+  const { logout } = useAuth();
+  useEffect(() => {
+    logout();
+  }, [logout]);
+  return (
+    <div className="min-h-screen bg-bg flex items-center justify-center">
+      <span className="font-mono text-xs text-ink-3">Unrecognized role — returning to sign-in…</span>
     </div>
   );
 }
@@ -223,7 +279,7 @@ export default function App() {
             path="/*"
             element={
               <ProtectedRoute>
-                <Console />
+                <RoleHome />
               </ProtectedRoute>
             }
           />

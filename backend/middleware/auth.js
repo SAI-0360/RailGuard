@@ -9,6 +9,7 @@
 
 const jwt = require("jsonwebtoken");
 const { isDBConnected } = require("../config/db");
+const { normalizeRole, SENIOR_ROLES } = require("../utils/roles");
 
 const DEV_FALLBACK_SECRET = "railguard-dev-secret-change-me";
 
@@ -63,15 +64,34 @@ async function protect(req, res, next) {
   next();
 }
 
-/** Role guard: only admins pass. Mount after protect. */
-function adminOnly(req, res, next) {
-  if (!req.user) {
-    return res.status(401).json({ error: "Not authorized" });
-  }
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Admin role required" });
-  }
-  next();
+/**
+ * Build a role guard. Roles are normalized first, so legacy "admin"/"worker"
+ * tokens are honored (admin→sse, worker→je). Mount after protect.
+ * @param {string[]} allowed - canonical roles permitted
+ * @param {string} label - human label for the 403 message
+ */
+function requireRoles(allowed, label) {
+  return function (req, res, next) {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authorized" });
+    }
+    const role = normalizeRole(req.user.role);
+    if (!allowed.includes(role)) {
+      return res.status(403).json({ error: `${label} role required` });
+    }
+    next();
+  };
 }
 
-module.exports = { protect, adminOnly, getJwtSecret };
+// Senior staff (DEN or SSE). Replaces the old "admin" gate; an "admin" token
+// normalizes to "sse" and still passes, preserving backward compatibility.
+const adminOnly = requireRoles(SENIOR_ROLES, "Senior (DEN/SSE)");
+
+// SSE only — repair verification is the Senior Section Engineer's sign-off.
+// DEN and JE are intentionally excluded.
+const sseOnly = requireRoles(["sse"], "SSE");
+
+// JE only — field work (acknowledging and progressing work orders).
+const jeOnly = requireRoles(["je"], "JE");
+
+module.exports = { protect, adminOnly, sseOnly, jeOnly, requireRoles, getJwtSecret };

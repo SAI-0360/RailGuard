@@ -1,9 +1,10 @@
 // backend/models/User.js
-// RailGuard operator account. Admins control the whole network and the
-// simulator; workers are scoped to their assignedSegments.
+// RailGuard operator account. DEN/SSE (senior) control the whole network and
+// the simulator; JE field workers are scoped to their assignedSegments.
 
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { CANONICAL_ROLES, normalizeRole } = require("../utils/roles");
 
 const userSchema = new mongoose.Schema(
   {
@@ -25,11 +26,15 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["admin", "worker"],
-      default: "worker",
+      // Canonical roles only. Legacy "admin"/"worker" are normalized to
+      // "sse"/"je" by the setter below before validation, so passing a legacy
+      // role still stores a valid canonical value.
+      enum: CANONICAL_ROLES,
+      default: "je",
+      set: normalizeRole,
     },
-    // Segment IDs this worker is responsible for ("SEG-001" ... "SEG-100").
-    // Empty for admins (admins see everything).
+    // Segment IDs this JE is responsible for ("SEG-001" ... "SEG-100").
+    // Empty for DEN/SSE (senior staff see everything).
     assignedSegments: {
       type: [String],
       default: [],

@@ -9,7 +9,7 @@ const { extractDefect } = require("../services/geminiExtractor");
 const { verifyRepair } = require("../services/geminiVerifier");
 const { generateDefectId, generateRepairId } = require("../utils/idGenerator");
 const { logActivity } = require("../services/activityLogger");
-const { protect, adminOnly } = require("../middleware/auth");
+const { protect, adminOnly, sseOnly } = require("../middleware/auth");
 
 function createAiRoutes(workOrders) {
   const router = express.Router();
@@ -56,8 +56,8 @@ function createAiRoutes(workOrders) {
     }
   });
 
-  // POST /api/verify-repair (admin only)
-  router.post("/verify-repair", protect, adminOnly, async (req, res, next) => {
+  // POST /api/verify-repair (SSE only — repair sign-off is the SSE's authority)
+  router.post("/verify-repair", protect, sseOnly, async (req, res, next) => {
     try {
       const { segmentId, defectId, repairDescription } = req.body;
 
