@@ -51,9 +51,19 @@ router.post("/login", async (req, res, next) => {
   }
 });
 
-// GET /api/auth/me — validate token, return the current user
+// GET /api/auth/me — validate token, return the current user.
+// Explicitly includes `role` (den | sse | je, or legacy admin/worker) so the
+// frontend can route by role. assignedSegments scopes JE field workers.
 router.get("/me", protect, (req, res) => {
-  res.json({ user: req.user });
+  res.json({
+    user: {
+      id: req.user.id,
+      name: req.user.name,
+      email: req.user.email,
+      role: req.user.role,
+      assignedSegments: req.user.assignedSegments || [],
+    },
+  });
 });
 
 module.exports = router;

@@ -8,15 +8,15 @@
 // Uses factory pattern: server.js passes the workOrders array reference in.
 
 const express = require("express");
-const { protect } = require("../middleware/auth");
+const { protect, jeOnly } = require("../middleware/auth");
 const { logActivity } = require("../services/activityLogger");
 
-// Field crew — mirrors the seeded operator accounts (utils/seedUsers.js).
-// Each worker owns a fixed segment range, so dispatch follows ownership.
+// Field crew — the JE (Junior Engineer) accounts from utils/seedUsers.js.
+// Each JE owns a fixed segment range, so dispatch follows ownership.
 const WORKERS = [
-  { name: "Track Worker 1", email: "worker1@railguard.com", fromSeg: 1, toSeg: 33 },
-  { name: "Track Worker 2", email: "worker2@railguard.com", fromSeg: 34, toSeg: 66 },
-  { name: "Track Worker 3", email: "worker3@railguard.com", fromSeg: 67, toSeg: 100 },
+  { name: "JE Track Worker 1", email: "je1@railguard.in", fromSeg: 1, toSeg: 33 },
+  { name: "JE Track Worker 2", email: "je2@railguard.in", fromSeg: 34, toSeg: 66 },
+  { name: "JE Track Worker 3", email: "je3@railguard.in", fromSeg: 67, toSeg: 100 },
 ];
 
 const DEADLINE_HOURS = 4;
@@ -90,18 +90,18 @@ function createWorkOrderRoutes(workOrders) {
   });
 
   // POST /api/work-orders/:workOrderId/progress — the human-in-the-loop step.
-  // Advances workerStatus one step. Only the assigned worker or an admin may
-  // act; every transition is logged to the activity ledger.
-  router.post("/:workOrderId/progress", protect, (req, res) => {
+  // Advances workerStatus one step. JE only (field work is the Junior
+  // Engineer's job — DEN/SSE cannot progress), and only the assigned JE.
+  // Every transition is logged to the activity ledger.
+  router.post("/:workOrderId/progress", protect, jeOnly, (req, res) => {
     const { workOrderId } = req.params;
     const wo = workOrders.find((w) => w.workOrderId === workOrderId);
     if (!wo) {
       return res.status(404).json({ error: `Work order ${workOrderId} not found` });
     }
 
-    const isAssignee = req.user.email === wo.assignedWorkerEmail;
-    if (!isAssignee && req.user.role !== "admin") {
-      return res.status(403).json({ error: `Only ${wo.assignedWorker} or an admin can update this work order` });
+    if (req.user.email !== wo.assignedWorkerEmail) {
+      return res.status(403).json({ error: `Only ${wo.assignedWorker} can update this work order` });
     }
 
     const current = WORKER_STATUS_FLOW.indexOf(wo.workerStatus || "unacknowledged");
@@ -111,6 +111,14 @@ function createWorkOrderRoutes(workOrders) {
 
     const nextStatus = WORKER_STATUS_FLOW[current + 1];
     wo.workerStatus = nextStatus;
+
+    // When the JE reports the job done they may attach a field report — the
+    // text the SSE later verifies against in the operations console.
+    if (nextStatus === "done" && typeof req.body?.completionReport === "string") {
+      const report = req.body.completionReport.trim();
+      if (report) wo.completionReport = report;
+    }
+
     wo.statusHistory = wo.statusHistory || [];
     wo.statusHistory.push({
       status: nextStatus,

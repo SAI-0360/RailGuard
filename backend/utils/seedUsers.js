@@ -15,6 +15,45 @@ function segmentRange(from, to) {
 }
 
 const SEED_USERS = [
+  // --- Current role hierarchy: DEN > SSE > JE ---
+  {
+    name: "Sr. DEN Sharma",
+    email: "den@railguard.in",
+    password: "den123",
+    role: "den",
+    assignedSegments: [],
+  },
+  {
+    name: "SSE Krishnan",
+    email: "sse@railguard.in",
+    password: "sse123",
+    role: "sse",
+    assignedSegments: [],
+  },
+  {
+    name: "JE Track Worker 1",
+    email: "je1@railguard.in",
+    password: "je1123",
+    role: "je",
+    assignedSegments: segmentRange(1, 33),
+  },
+  {
+    name: "JE Track Worker 2",
+    email: "je2@railguard.in",
+    password: "je2123",
+    role: "je",
+    assignedSegments: segmentRange(34, 66),
+  },
+  {
+    name: "JE Track Worker 3",
+    email: "je3@railguard.in",
+    password: "je3123",
+    role: "je",
+    assignedSegments: segmentRange(67, 100),
+  },
+
+  // --- Legacy accounts, kept for backward compatibility. Their "admin"/
+  // "worker" roles are normalized to "sse"/"je" by the User model setter. ---
   {
     name: "Operations Admin",
     email: "admin@railguard.com",
@@ -46,19 +85,26 @@ const SEED_USERS = [
 ];
 
 /**
- * Seed demo users if the collection is empty. Never throws — a seeding
- * failure must not take the demo server down.
+ * Seed demo users idempotently: create any account whose email is missing,
+ * leave existing accounts untouched. This lets new roles (den/sse/je) be
+ * added to a database that already holds the legacy accounts. Never throws —
+ * a seeding failure must not take the demo server down.
  */
 async function seedUsers() {
   try {
-    const count = await User.countDocuments();
-    if (count > 0) {
-      console.log(`User seed skipped: ${count} user(s) already present`);
-      return;
+    let created = 0;
+    for (const u of SEED_USERS) {
+      const exists = await User.findOne({ email: u.email });
+      if (exists) continue;
+      // create() (not insertMany) so the bcrypt pre-save hook + role setter run
+      await User.create(u);
+      created++;
     }
-    // create() (not insertMany) so the bcrypt pre-save hook runs per user
-    await User.create(SEED_USERS);
-    console.log(`Seeded ${SEED_USERS.length} demo users (1 admin, 3 workers)`);
+    if (created > 0) {
+      console.log(`Seeded ${created} new user(s); ${SEED_USERS.length - created} already present`);
+    } else {
+      console.log(`User seed: all ${SEED_USERS.length} accounts already present`);
+    }
   } catch (err) {
     console.error(`User seeding failed: ${err.message}`);
   }

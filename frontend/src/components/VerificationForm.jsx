@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { verifyRepair } from '../services/api';
 
@@ -8,12 +8,28 @@ const SELECT_ARROW = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
  * VerificationForm — describe a completed repair; the agent verifies it
  * against the defect and recommends a status. Closes the maintenance loop.
  */
-export default function VerificationForm({ segmentId, defects = [], onVerified }) {
+export default function VerificationForm({ segmentId, defects = [], onVerified, prefill = null }) {
   const [selectedDefectId, setSelectedDefectId] = useState('');
   const [repairDescription, setRepairDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+
+  // Pre-fill from a JE field report ("Verify with AI →" in the work order
+  // pipeline). prefill.key changes on each click so re-verifying re-seeds.
+  // The first active defect is auto-selected so the SSE can verify in one step.
+  useEffect(() => {
+    if (prefill && prefill.text) {
+      setRepairDescription(prefill.text);
+      setResult(null);
+      setError(null);
+      if (defects.length > 0) {
+        const first = defects[0];
+        setSelectedDefectId(first.defectId || 'defect-0');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.key]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
