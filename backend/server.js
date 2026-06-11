@@ -177,6 +177,6 @@ app.use(errorHandler);
 // Auto-start autonomous monitoring
 startMonitoring();
 
-app.listen(PORT, () => {
-  console.log(`RailGuard backend running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`RailGuard backend running on 0.0.0.0:${PORT}`);
 });

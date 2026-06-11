@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export const TOKEN_STORAGE_KEY = "railguard_token";
 export const USER_STORAGE_KEY = "railguard_user";
