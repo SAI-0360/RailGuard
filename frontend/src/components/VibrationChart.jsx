@@ -9,53 +9,51 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
+import { VIBRATION_NORMAL_MAX, VIBRATION_WARNING_MAX } from '../utils/constants';
 
-/**
- * Custom tooltip for the vibration chart.
- */
+const MONO = "'JetBrains Mono', ui-monospace, monospace";
+
+/** Custom tooltip: instrument readout, not a floating card. */
 function ChartTooltip({ active, payload }) {
   if (!active || !payload || payload.length === 0) return null;
   const data = payload[0].payload;
+  const vib = data.vibrationLevel;
 
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 shadow-xl text-xs">
-      <p className="text-gray-400 mb-1.5">{new Date(data.timestamp).toLocaleTimeString()}</p>
-      <div className="space-y-1">
-        <p className="text-white font-semibold">
-          Vibration: <span className={
-            data.vibrationLevel > 7.0 ? 'text-red-400' :
-            data.vibrationLevel > 4.0 ? 'text-amber-400' : 'text-emerald-400'
-          }>{data.vibrationLevel.toFixed(2)} mm/s</span>
-        </p>
-        <p className="text-gray-300">
-          Temp: <span className="text-blue-400">{data.temperature?.toFixed(1) ?? '—'}°C</span>
-        </p>
-        {data.crackDetected && (
-          <p className="text-red-400 font-bold">⚠ Crack Detected</p>
-        )}
-      </div>
+    <div className="bg-surface-3 border border-line rounded-lg px-3 py-2 font-mono text-[11px]">
+      <p className="text-ink-3 mb-1">{new Date(data.timestamp).toLocaleTimeString()}</p>
+      <p className="text-ink">
+        vib{' '}
+        <span className={
+          vib > VIBRATION_WARNING_MAX ? 'text-crit' :
+          vib > VIBRATION_NORMAL_MAX ? 'text-warn' : 'text-ink'
+        }>
+          {vib.toFixed(2)} mm/s
+        </span>
+      </p>
+      {data.temperature != null && (
+        <p className="text-ink-2">temp {data.temperature.toFixed(1)}°C</p>
+      )}
+      {data.crackDetected && <p className="text-crit">crack detected</p>}
     </div>
   );
 }
 
 /**
- * VibrationChart — Recharts line chart for vibration history.
- * Shows reference lines at normal (4.0) and warning (7.0) thresholds.
- * @param {{ vibrationHistory: Array }} props
+ * VibrationChart — single focused time-series with threshold lines, so the
+ * operator reads "how far past safe", not just an abstract curve.
+ * The trace uses the interactive accent; thresholds carry the severity hues.
  */
 export default function VibrationChart({ vibrationHistory = [] }) {
   if (vibrationHistory.length === 0) {
     return (
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Vibration History</h4>
-        <div className="flex items-center justify-center h-40 text-gray-500 text-sm">
-          No vibration data available
-        </div>
+      <div className="flex items-center justify-center h-36 rounded-lg border border-line bg-surface-2
+        font-mono text-[11px] text-ink-3">
+        No vibration readings yet
       </div>
     );
   }
 
-  // Format time labels for ticks
   const formatTime = (tickItem) => {
     try {
       return new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -65,69 +63,52 @@ export default function VibrationChart({ vibrationHistory = [] }) {
   };
 
   return (
-    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-      <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Vibration History</h4>
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={vibrationHistory} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+    <ResponsiveContainer width="100%" height={180}>
+      <LineChart data={vibrationHistory} margin={{ top: 5, right: 8, left: -24, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(154,163,178,0.07)" vertical={false} />
 
-          <XAxis
-            dataKey="timestamp"
-            tickFormatter={formatTime}
-            tick={{ fill: '#6B7280', fontSize: 10 }}
-            axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-            tickLine={false}
-            interval="preserveStartEnd"
-          />
-          <YAxis
-            domain={[0, 12]}
-            tick={{ fill: '#6B7280', fontSize: 10 }}
-            axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-            tickLine={false}
-            unit=" mm/s"
-          />
+        <XAxis
+          dataKey="timestamp"
+          tickFormatter={formatTime}
+          tick={{ fill: '#6A7383', fontSize: 9, fontFamily: MONO }}
+          axisLine={{ stroke: '#232936' }}
+          tickLine={false}
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          domain={[0, 12]}
+          tick={{ fill: '#6A7383', fontSize: 9, fontFamily: MONO }}
+          axisLine={false}
+          tickLine={false}
+        />
 
-          {/* Reference lines for thresholds */}
-          <ReferenceLine
-            y={4.0}
-            stroke="#F59E0B"
-            strokeDasharray="6 4"
-            strokeOpacity={0.8}
-            label={{ value: 'Normal Max (4.0)', fill: '#F59E0B', fontSize: 9, position: 'right' }}
-          />
-          <ReferenceLine
-            y={7.0}
-            stroke="#EF4444"
-            strokeDasharray="6 4"
-            strokeOpacity={0.8}
-            label={{ value: 'Warning Max (7.0)', fill: '#EF4444', fontSize: 9, position: 'right' }}
-          />
+        <ReferenceLine
+          y={VIBRATION_NORMAL_MAX}
+          stroke="#E6A23C"
+          strokeDasharray="5 4"
+          strokeOpacity={0.6}
+          label={{ value: `warn ${VIBRATION_NORMAL_MAX.toFixed(1)}`, fill: '#E6A23C', fontSize: 9, fontFamily: MONO, position: 'insideTopRight' }}
+        />
+        <ReferenceLine
+          y={VIBRATION_WARNING_MAX}
+          stroke="#F0524F"
+          strokeDasharray="5 4"
+          strokeOpacity={0.6}
+          label={{ value: `crit ${VIBRATION_WARNING_MAX.toFixed(1)}`, fill: '#F0524F', fontSize: 9, fontFamily: MONO, position: 'insideTopRight' }}
+        />
 
-          <Tooltip content={<ChartTooltip />} />
+        <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#232936' }} />
 
-          <Line
-            type="monotone"
-            dataKey="vibrationLevel"
-            stroke="#10B981"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, fill: '#10B981', stroke: '#0B0F19', strokeWidth: 2 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-500">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Normal ≤ 4.0
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Warning ≤ 7.0
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Critical &gt; 7.0
-        </span>
-      </div>
-    </div>
+        <Line
+          type="monotone"
+          dataKey="vibrationLevel"
+          stroke="#4CB8E8"
+          strokeWidth={1.5}
+          dot={false}
+          activeDot={{ r: 3, fill: '#4CB8E8', stroke: '#0B0D12', strokeWidth: 2 }}
+          isAnimationActive={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }

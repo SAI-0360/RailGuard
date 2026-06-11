@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { verifyRepair } from '../services/api';
 
+const SELECT_ARROW = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236A7383' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`;
+
 /**
- * VerificationForm — Submit a repair description for Gemini AI verification.
- * @param {{ segmentId: string, defects: Array, onVerified: function }} props
+ * VerificationForm — describe a completed repair; the agent verifies it
+ * against the defect and recommends a status. Closes the maintenance loop.
  */
 export default function VerificationForm({ segmentId, defects = [], onVerified }) {
   const [selectedDefectId, setSelectedDefectId] = useState('');
@@ -32,161 +34,146 @@ export default function VerificationForm({ segmentId, defects = [], onVerified }
     }
   };
 
-  // If no defects, show a message
   if (defects.length === 0) {
     return (
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-lg">🔧</span>
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-            Repair Verification
-          </h4>
-        </div>
-        <p className="text-xs text-gray-500 py-2">
-          No active defects to verify repairs against. Extract a defect first.
+      <div>
+        <h3 className="panel-title mb-1.5">Verify repair</h3>
+        <p className="text-xs text-ink-3">
+          No active defects to verify against. Log an inspection report first.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-lg">🔧</span>
-        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Repair Verification
-        </h4>
-        <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-          AI
-        </span>
-      </div>
+    <div>
+      <h3 className="panel-title mb-2">Verify repair</h3>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        {/* Defect selector */}
+      <form onSubmit={handleSubmit} className="space-y-2">
         <div>
-          <label htmlFor="verify-defect-select" className="text-xs text-gray-400 block mb-1.5">
-            Select defect to verify against
+          <label htmlFor="verify-defect-select" className="block text-[11px] text-ink-2 mb-1">
+            Defect to verify against
           </label>
           <select
             id="verify-defect-select"
             value={selectedDefectId}
             onChange={(e) => setSelectedDefectId(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 appearance-none cursor-pointer"
+            className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2 text-xs text-ink
+              focus:outline-none focus:border-accent/60 appearance-none cursor-pointer
+              transition-colors duration-150"
             style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239CA3AF' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+              backgroundImage: SELECT_ARROW,
               backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 12px center',
+              backgroundPosition: 'right 10px center',
             }}
           >
-            <option value="" className="bg-gray-900 text-gray-400">— Select a defect —</option>
+            <option value="" className="bg-surface-3 text-ink-2">Select a defect</option>
             {defects.map((d, idx) => (
-              <option key={d.defectId || idx} value={d.defectId || `defect-${idx}`} className="bg-gray-900 text-white">
-                {d.defectId || `Defect ${idx + 1}`} — {d.defectType || 'Unknown'} ({d.severity || '?'})
+              <option
+                key={d.defectId || idx}
+                value={d.defectId || `defect-${idx}`}
+                className="bg-surface-3 text-ink"
+              >
+                {d.defectId || `Defect ${idx + 1}`} · {d.defectType || 'Unknown'} ({d.severity || '?'})
               </option>
             ))}
           </select>
         </div>
 
-        {/* Repair description */}
         <div>
-          <label htmlFor="repair-description" className="text-xs text-gray-400 block mb-1.5">
-            Describe the repair performed
+          <label htmlFor="repair-description" className="block text-[11px] text-ink-2 mb-1">
+            Repair performed
           </label>
           <textarea
             id="repair-description"
             value={repairDescription}
             onChange={(e) => setRepairDescription(e.target.value)}
-            placeholder="Describe the repair actions taken to address the defect..."
+            placeholder="Describe the repair actions taken to address the defect."
             rows={3}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/30 transition-all"
+            className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2.5 text-xs text-ink
+              placeholder-ink-3 resize-none focus:outline-none focus:border-accent/60
+              transition-colors duration-150"
           />
         </div>
 
-        {/* Submit */}
         <button
           type="submit"
           disabled={loading || !repairDescription.trim() || !selectedDefectId}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-            loading || !repairDescription.trim() || !selectedDefectId
-              ? 'bg-emerald-500/10 text-emerald-500/40 cursor-not-allowed border border-emerald-500/10'
-              : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 cursor-pointer'
-          }`}
+          className="btn-accent w-full px-4 py-2"
         >
           {loading ? (
             <>
-              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Verifying...
+              <Spinner />
+              Verifying repair
             </>
           ) : (
-            <>🔧 Verify Repair</>
+            'Verify repair'
           )}
         </button>
       </form>
 
-      {/* Error */}
       <AnimatePresence>
         {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="mt-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400"
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="mt-2 px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit"
           >
-            ✗ {error}
-          </motion.div>
+            {error}
+          </motion.p>
         )}
       </AnimatePresence>
 
-      {/* Verification result */}
       <AnimatePresence>
         {result && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.3 }}
-            className="mt-4 bg-white/3 border border-white/5 rounded-xl p-4 space-y-3"
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            className="mt-2 border border-line rounded-lg bg-surface-2 px-3 py-2.5 space-y-2"
           >
-            {/* Verified / Not Verified badge */}
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                result.verification?.isVerified
-                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
-                  : 'bg-red-500/15 text-red-400 border-red-500/20'
-              }`}>
-                {result.verification?.isVerified ? '✓ Verified' : '✗ Not Verified'}
+              <span className={result.verification?.isVerified ? 'chip-ok' : 'chip-crit'}>
+                {result.verification?.isVerified ? 'Verified' : 'Not verified'}
               </span>
-
               {result.verification?.confidence !== undefined && (
-                <span className="text-xs text-gray-400">
-                  Confidence: <span className="text-white font-semibold">{(result.verification.confidence * 100).toFixed(0)}%</span>
+                <span className="font-mono text-[11px] text-ink-2">
+                  confidence {(result.verification.confidence * 100).toFixed(0)}%
                 </span>
               )}
             </div>
 
-            {/* Reasoning */}
             {result.verification?.verificationReasoning && (
-              <p className="text-xs text-gray-300 leading-relaxed">
+              <p className="text-[11px] text-ink-2 leading-relaxed">
                 {result.verification.verificationReasoning}
               </p>
             )}
 
-            {/* Status recommendation */}
             {result.verification?.statusRecommendation && (
-              <div className="text-xs text-gray-400">
-                Recommendation: <span className={`font-semibold ${
-                  result.verification.statusRecommendation === 'healthy' ? 'text-emerald-400' :
-                  result.verification.statusRecommendation === 'warning' ? 'text-amber-400' : 'text-red-400'
-                }`}>{result.verification.statusRecommendation}</span>
-              </div>
+              <p className="text-[11px] text-ink-3">
+                Recommended status:{' '}
+                <span className={
+                  result.verification.statusRecommendation === 'healthy' ? 'text-ok' :
+                  result.verification.statusRecommendation === 'warning' ? 'text-warn' : 'text-crit'
+                }>
+                  {result.verification.statusRecommendation}
+                </span>
+              </p>
             )}
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
   );
 }

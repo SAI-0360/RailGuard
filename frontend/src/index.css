@@ -4,44 +4,95 @@
 
 @layer base {
   body {
-    background-color: #0B0F19;
-    color: #ffffff;
-    font-family: 'Inter', sans-serif;
+    background-color: #0B0D12;
+    color: #E7EBF1;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+  }
+
+  /* Numbers never jitter as readings update */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: rgba(76, 184, 232, 0.25);
+  }
+
+  /* Visible keyboard focus, accent-colored, on everything interactive */
+  :focus-visible {
+    outline: 2px solid #4CB8E8;
+    outline-offset: 1px;
+  }
+
+  /* Quiet scrollbars for an instrument panel */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #232936 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #232936;
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
-@keyframes pulse-warning {
-
-  0%,
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+@layer components {
+  /* Shared button vocabulary — one affordance language across the console */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border text-xs font-medium
+      transition-[background-color,border-color,transform] duration-150 ease-swift
+      active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none cursor-pointer;
+  }
+  .btn-accent {
+    @apply btn bg-accent/15 border-accent/30 text-accent hover:bg-accent/25;
+  }
+  .btn-ghost {
+    @apply btn bg-surface-2 border-line text-ink-2 hover:bg-surface-3 hover:text-ink;
+  }
+  .btn-crit {
+    @apply btn bg-crit/10 border-crit/30 text-crit hover:bg-crit/20;
   }
 
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 15px 4px rgba(245, 158, 11, 0.5);
+  /* Severity chips — the only pill shapes in the system */
+  .chip {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide;
+  }
+  .chip-ok   { @apply chip bg-ok/10 text-ok; }
+  .chip-warn { @apply chip bg-warn/10 text-warn; }
+  .chip-crit { @apply chip bg-crit/10 text-crit; }
+
+  .panel {
+    @apply bg-surface-1 border border-line rounded-lg;
+  }
+
+  .panel-title {
+    @apply text-xs font-medium text-ink-2;
   }
 }
 
-@keyframes pulse-critical {
-
-  0%,
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-  }
-
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 15px 4px rgba(239, 68, 68, 0.5);
-  }
+/* The single sanctioned resting animation: agent-liveness dot while scanning.
+   Real semantic state (system is actively working), used once on the page. */
+@keyframes live-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-live {
+  animation: live-dot 2.4s ease-in-out infinite;
 }
 
-.animate-pulse-warning {
-  animation: pulse-warning 1.5s infinite ease-in-out;
-}
-
-.animate-pulse-critical {
-  animation: pulse-critical 1.5s infinite ease-in-out;
+@media (prefers-reduced-motion: reduce) {
+  .animate-live {
+    animation: none;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

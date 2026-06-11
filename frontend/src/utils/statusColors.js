@@ -1,11 +1,13 @@
+// Severity color tokens. These hues are reserved exclusively for severity;
+// the interactive accent (#4CB8E8) is a separate vocabulary.
 export function getStatusColors(status) {
   switch (status) {
     case "warning":
-      return { bg: "bg-amber-500", text: "text-amber-500", hex: "#F59E0B" };
+      return { bg: "bg-warn", text: "text-warn", hex: "#E6A23C" };
     case "critical":
-      return { bg: "bg-red-500", text: "text-red-500", hex: "#EF4444" };
+      return { bg: "bg-crit", text: "text-crit", hex: "#F0524F" };
     case "healthy":
     default:
-      return { bg: "bg-emerald-500", text: "text-emerald-500", hex: "#10B981" };
+      return { bg: "bg-ok", text: "text-ok", hex: "#3FB890" };
   }
 }
