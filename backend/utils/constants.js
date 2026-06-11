@@ -4,11 +4,20 @@ const CONSTANTS = {
   DEFECT_ID_PREFIX: "DEF-",
   REPAIR_ID_PREFIX: "RPR-",
 
-  // Risk formula weights
-  WEIGHT_VIBRATION: 0.40,
+  // Risk formula weights — must sum to exactly 1.0.
+  // WEIGHT_CURVATURE = 0.15 is grounded in FRA-based derailment research:
+  // derailment rates on curved track run ~2-3x tangent track, but broken
+  // rails/cracks remain the single largest cause, so curvature weighs in
+  // below vibration and crack while displacing part of incident/age.
+  WEIGHT_VIBRATION: 0.35,
   WEIGHT_CRACK: 0.25,
-  WEIGHT_INCIDENT: 0.20,
-  WEIGHT_AGE: 0.15,
+  WEIGHT_INCIDENT: 0.15,
+  WEIGHT_AGE: 0.10,
+  WEIGHT_CURVATURE: 0.15,
+
+  // Curvature normalization (meters of circumcircle radius)
+  CURVE_RADIUS_CRITICAL_M: 300,   // radius ≤ 300 m = maximum curve penalty (100)
+  CURVE_RADIUS_STRAIGHT_M: 10000, // radius beyond this is treated as straight (0)
 
   // Risk thresholds
   THRESHOLD_HEALTHY_MAX: 30.00,

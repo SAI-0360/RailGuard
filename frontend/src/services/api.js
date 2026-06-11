@@ -2,9 +2,33 @@ import axios from "axios";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
+export const TOKEN_STORAGE_KEY = "railguard_token";
+export const USER_STORAGE_KEY = "railguard_user";
+
 const client = axios.create({ baseURL: API_BASE });
 
-export const getSegments = () => client.get("/api/segments").then(r => r.data);
+// Bearer interceptor — reads the token from localStorage on every request,
+// so auth works even for requests fired before React context mounts.
+client.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export default client;
+
+// Auth
+export const login = (email, password) =>
+  client.post("/api/auth/login", { email, password }).then(r => r.data);
+export const getMe = () => client.get("/api/auth/me").then(r => r.data);
+
+// Route filter params are optional: { startStation, endStation }
+export const getSegments = (routeParams) =>
+  client.get("/api/segments", { params: routeParams || undefined }).then(r => r.data);
+
+export const getStations = () => client.get("/api/stations").then(r => r.data);
 
 export const getSegment = (id) => client.get(`/api/segments/${id}`).then(r => r.data);
 

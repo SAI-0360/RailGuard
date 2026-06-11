@@ -17,7 +17,7 @@ import { getStatusColors } from '../utils/statusColors';
  * Vital strip, linear risk meter with threshold ticks, telemetry chart,
  * honest risk decomposition (real model weights), AI analysis, defects, actions.
  */
-export default function FocusPanel({ segment, loading, onClose, onDefectExtracted, onRepairVerified }) {
+export default function FocusPanel({ segment, loading, canAct = true, onClose, onDefectExtracted, onRepairVerified }) {
   const reduceMotion = useReducedMotion();
   const [aiExplanation, setAiExplanation] = useState(null);
 
@@ -134,15 +134,22 @@ export default function FocusPanel({ segment, loading, onClose, onDefectExtracte
 
           <DefectList defects={activeDefects} segmentId={segmentId} />
 
-          {/* Action rail: log a report, verify a repair */}
-          <div className="space-y-4 border-t border-line pt-4">
-            <ExtractionForm segmentId={segmentId} onExtracted={handleExtracted} />
-            <VerificationForm
-              segmentId={segmentId}
-              defects={activeDefects}
-              onVerified={onRepairVerified}
-            />
-          </div>
+          {/* Action rail: log a report, verify a repair (admin role; backend enforces) */}
+          {canAct ? (
+            <div className="space-y-4 border-t border-line pt-4">
+              <ExtractionForm segmentId={segmentId} onExtracted={handleExtracted} />
+              <VerificationForm
+                segmentId={segmentId}
+                defects={activeDefects}
+                onVerified={onRepairVerified}
+              />
+            </div>
+          ) : (
+            <p className="border-t border-line pt-4 text-[11px] text-ink-3">
+              Inspection logging and repair verification require the admin role.
+              Report findings to your operations admin.
+            </p>
+          )}
         </div>
       </motion.section>
     </AnimatePresence>

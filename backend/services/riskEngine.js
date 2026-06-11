@@ -6,6 +6,9 @@ const {
   WEIGHT_CRACK,
   WEIGHT_INCIDENT,
   WEIGHT_AGE,
+  WEIGHT_CURVATURE,
+  CURVE_RADIUS_CRITICAL_M,
+  CURVE_RADIUS_STRAIGHT_M,
   THRESHOLD_HEALTHY_MAX,
   THRESHOLD_WARNING_MAX,
   VIBRATION_CRITICAL_THRESHOLD,
@@ -14,18 +17,33 @@ const {
   READINGS_PER_DAY_ESTIMATE,
 } = require("../utils/constants");
 
+/**
+ * Curve penalty from the JIT-computed circumcircle radius (meters).
+ * 0 (straight track) → 0 penalty. The sharper the curve (smaller radius),
+ * the higher the penalty, maxing out at radius ≤ CURVE_RADIUS_CRITICAL_M.
+ * @param {number} radiusOfCurvature - meters; 0 or missing = straight
+ * @returns {number} 0-100 component
+ */
+function curvatureComponentOf(radiusOfCurvature) {
+  const radius = radiusOfCurvature || 0;
+  if (radius <= 0 || radius >= CURVE_RADIUS_STRAIGHT_M) return 0;
+  return Math.min((CURVE_RADIUS_CRITICAL_M / radius) * 100, 100);
+}
+
 function calculateRisk(segment) {
   const vibrationComponent = Math.min((segment.vibrationLevel / 10.0) * 100, 100);
   const crackComponent = Math.min(segment.crackCount * 33.33, 100);
   const incidentComponent = Math.min(segment.incidentCount * 20.0, 100);
   const ageComponent = Math.min(segment.daysSinceInspection * 3.33, 100);
+  const curvatureComponent = curvatureComponentOf(segment.radiusOfCurvature);
 
   const riskScore = parseFloat(
     (
       WEIGHT_VIBRATION * vibrationComponent +
       WEIGHT_CRACK * crackComponent +
       WEIGHT_INCIDENT * incidentComponent +
-      WEIGHT_AGE * ageComponent
+      WEIGHT_AGE * ageComponent +
+      WEIGHT_CURVATURE * curvatureComponent
     ).toFixed(2)
   );
 

@@ -1,5 +1,6 @@
 // backend/routes/segmentRoutes.js
-// GET  /api/segments                     — return all 100 segments with recalculated risk
+// GET  /api/stations                     — stations available for route filtering
+// GET  /api/segments?startStation=&endStation= — JIT route segments with recalculated risk
 // GET  /api/segments/:segmentId          — return one segment by ID (+ prediction + trendSummary)
 // POST /api/segments/:segmentId/simulate — simulate spike/crack/reset actions
 
@@ -7,19 +8,71 @@ const express = require("express");
 const router = express.Router();
 const segments = require("../data/segments");
 const { calculateRisk, predictTimeToCritical, getTrendSummary } = require("../services/riskEngine");
+const { loadRawData, getStations, processRoute } = require("../services/routeProcessor");
 const { MAX_VIBRATION_HISTORY } = require("../utils/constants");
+const { protect, adminOnly } = require("../middleware/auth");
 
-// GET /api/segments — return all 100 segments with recalculated risk
+// GET /api/stations — station list for the frontend RouteFilter
+router.get("/stations", (req, res) => {
+  res.json({ stations: getStations() });
+});
+
+// GET /api/segments — "Cache Raw Data, Compute on Demand":
+// reads cached raw coordinates, JIT-slices them into 1-km segments for the
+// requested route (default: full corridor), attaches the geometry to the live
+// telemetry store, and returns risk-assessed segments.
 router.get("/segments", (req, res) => {
-  segments.forEach((segment) => {
+  const { startStation, endStation } = req.query;
+
+  // Geometry layer — computed on demand from raw data. If the raw DB hasn't
+  // been seeded, fall back to plain telemetry segments (no geometry).
+  let geo = null;
+  const rawData = loadRawData();
+  if (rawData) {
+    try {
+      geo = processRoute(rawData, startStation, endStation);
+    } catch (err) {
+      // Bad station names are a client error; anything else falls through
+      if (startStation || endStation) {
+        return res.status(400).json({
+          error: err.message,
+          stations: getStations().map((s) => s.name),
+        });
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+
+  if (!geo) {
+    segments.forEach((segment) => {
+      const { riskScore, status } = calculateRisk(segment);
+      segment.riskScore = riskScore;
+      segment.status = status;
+      segment.lastUpdated = now;
+    });
+    segments.save();
+    return res.json({ segments });
+  }
+
+  // Merge JIT geometry onto the live telemetry segments (same SEG-NNN ids) so
+  // the simulator, monitoring loop, and detail view stay on one source of truth.
+  const routeSegments = geo.segments.map((g, i) => {
+    const segment = segments[i]; // SEG-001 ↔ index 0: O(1) lookup
+    segment.startCoord = g.startCoord;
+    segment.endCoord = g.endCoord;
+    segment.distanceKm = g.distanceKm;
+    segment.radiusOfCurvature = g.radiusOfCurvature;
+
     const { riskScore, status } = calculateRisk(segment);
     segment.riskScore = riskScore;
     segment.status = status;
-    segment.lastUpdated = new Date().toISOString();
+    segment.lastUpdated = now;
+    return segment;
   });
 
   segments.save();
-  res.json({ segments });
+  res.json({ segments: routeSegments, route: geo.route });
 });
 
 // GET /api/segments/:segmentId — return one segment by ID with trend prediction
@@ -43,8 +96,8 @@ router.get("/segments/:segmentId", (req, res) => {
   res.json({ segment: { ...segment, prediction, trendSummary } });
 });
 
-// POST /api/segments/:segmentId/simulate — simulate spike/crack/reset actions
-router.post("/segments/:segmentId/simulate", (req, res) => {
+// POST /api/segments/:segmentId/simulate — simulate spike/crack/reset actions (admin only)
+router.post("/segments/:segmentId/simulate", protect, adminOnly, (req, res) => {
   const { segmentId } = req.params;
   const { action, value } = req.body;
 
