@@ -77,6 +77,67 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Live map (Leaflet) — instrument-panel skin
+   --------------------------------------------------------------------------- */
+
+/* Critical segments pulse on the map: an unacknowledged critical is a live
+   alarm state, the same semantic class as the agent-liveness dot. The global
+   prefers-reduced-motion rule below collapses it to a steady line. */
+@keyframes map-crit-blink {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.3; }
+}
+.map-crit-blink {
+  animation: map-crit-blink 1.4s ease-in-out infinite;
+}
+
+/* Leaflet chrome recolored to console tokens — no white flashes, no default
+   rounded-white controls breaking the dark surface. */
+.leaflet-container {
+  background: #0B0D12;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.leaflet-control-zoom a {
+  background: #181C25 !important;
+  border: 1px solid #232936 !important;
+  color: #9AA3B2 !important;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.leaflet-control-zoom a:hover {
+  background: #1F2430 !important;
+  color: #E7EBF1 !important;
+}
+.leaflet-bar {
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.leaflet-control-attribution {
+  background: rgba(18, 21, 28, 0.85) !important;
+  color: #6A7383 !important;
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a {
+  color: #6A7383 !important;
+}
+.map-tooltip {
+  background: #181C25 !important;
+  border: 1px solid #232936 !important;
+  border-radius: 6px !important;
+  color: #E7EBF1 !important;
+  font-size: 11px !important;
+  box-shadow: none !important;
+  padding: 4px 8px !important;
+}
+.map-tooltip::before {
+  display: none; /* no white arrow nub on a dark panel */
+}
+.leaflet-interactive {
+  cursor: pointer;
+}
+
 /* The single sanctioned resting animation: agent-liveness dot while scanning.
    Real semantic state (system is actively working), used once on the page. */
 @keyframes live-dot {

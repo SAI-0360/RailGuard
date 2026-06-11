@@ -7,7 +7,7 @@ import ExtractionForm from './ExtractionForm';
 import VerificationForm from './VerificationForm';
 import TrendBadge from './TrendBadge';
 import {
-  WEIGHT_VIBRATION, WEIGHT_CRACK, WEIGHT_INCIDENT, WEIGHT_AGE,
+  WEIGHT_VIBRATION, WEIGHT_CRACK, WEIGHT_INCIDENT, WEIGHT_AGE, WEIGHT_CURVATURE,
   THRESHOLD_HEALTHY_MAX, THRESHOLD_WARNING_MAX,
 } from '../utils/constants';
 import { getStatusColors } from '../utils/statusColors';
@@ -20,10 +20,16 @@ import { getStatusColors } from '../utils/statusColors';
 export default function FocusPanel({ segment, loading, canAct = true, onClose, onDefectExtracted, onRepairVerified }) {
   const reduceMotion = useReducedMotion();
   const [aiExplanation, setAiExplanation] = useState(null);
+  const [tab, setTab] = useState('overview');
 
   useEffect(() => {
     if (segment) setAiExplanation(segment.riskExplanation || null);
   }, [segment?.segmentId, segment?.riskExplanation]);
+
+  // A new segment in focus always opens on Overview
+  useEffect(() => {
+    setTab('overview');
+  }, [segment?.segmentId]);
 
   if (!segment) {
     return (
@@ -49,7 +55,8 @@ export default function FocusPanel({ segment, loading, canAct = true, onClose, o
   const {
     segmentId, status, riskScore = 0, vibrationLevel, crackCount = 0,
     incidentCount = 0, daysSinceInspection = 0, activeDefects = [],
-    vibrationHistory = [], prediction = null,
+    vibrationHistory = [], prediction = null, repairLog = [],
+    radiusOfCurvature,
   } = segment;
 
   const handleExtracted = (response) => {
@@ -116,39 +123,77 @@ export default function FocusPanel({ segment, loading, canAct = true, onClose, o
             />
           </div>
 
-          {/* Telemetry chart */}
-          <div>
-            <h3 className="panel-title mb-2">Vibration, recent readings</h3>
-            <VibrationChart vibrationHistory={vibrationHistory} status={status} />
+          {/* View tabs: live workspace vs the segment's chronological record */}
+          <div role="tablist" aria-label="Segment view" className="flex items-center gap-1 border-b border-line">
+            {[
+              { id: 'overview', label: 'Overview' },
+              { id: 'history', label: 'History' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`relative px-3 py-2 text-xs font-medium transition-colors duration-150 cursor-pointer
+                  ${tab === t.id ? 'text-ink' : 'text-ink-3 hover:text-ink-2'}`}
+              >
+                {t.label}
+                {tab === t.id && (
+                  <motion.span
+                    layoutId="focus-tab-underline"
+                    className="absolute inset-x-1 -bottom-px h-[2px] bg-accent rounded-full"
+                    transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+                  />
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Risk decomposition — why the score is what it is, from the real model weights */}
-          <RiskFactors
-            vibrationLevel={vibrationLevel}
-            crackCount={crackCount}
-            incidentCount={incidentCount}
-            daysSinceInspection={daysSinceInspection}
-          />
+          {tab === 'overview' ? (
+            <>
+              {/* Telemetry chart */}
+              <div>
+                <h3 className="panel-title mb-2">Vibration, recent readings</h3>
+                <VibrationChart vibrationHistory={vibrationHistory} status={status} />
+              </div>
 
-          <AiExplanation explanation={aiExplanation} />
-
-          <DefectList defects={activeDefects} segmentId={segmentId} />
-
-          {/* Action rail: log a report, verify a repair (admin role; backend enforces) */}
-          {canAct ? (
-            <div className="space-y-4 border-t border-line pt-4">
-              <ExtractionForm segmentId={segmentId} onExtracted={handleExtracted} />
-              <VerificationForm
-                segmentId={segmentId}
-                defects={activeDefects}
-                onVerified={onRepairVerified}
+              {/* Risk decomposition — why the score is what it is, from the real model weights */}
+              <RiskFactors
+                vibrationLevel={vibrationLevel}
+                crackCount={crackCount}
+                incidentCount={incidentCount}
+                daysSinceInspection={daysSinceInspection}
+                radiusOfCurvature={radiusOfCurvature}
               />
-            </div>
+
+              <AiExplanation explanation={aiExplanation} />
+
+              <DefectList defects={activeDefects} segmentId={segmentId} />
+
+              {/* Action rail: log a report, verify a repair (admin role; backend enforces) */}
+              {canAct ? (
+                <div className="space-y-4 border-t border-line pt-4">
+                  <ExtractionForm segmentId={segmentId} onExtracted={handleExtracted} />
+                  <VerificationForm
+                    segmentId={segmentId}
+                    defects={activeDefects}
+                    onVerified={onRepairVerified}
+                  />
+                </div>
+              ) : (
+                <p className="border-t border-line pt-4 text-[11px] text-ink-3">
+                  Inspection logging and repair verification require the admin role.
+                  Report findings to your operations admin.
+                </p>
+              )}
+            </>
           ) : (
-            <p className="border-t border-line pt-4 text-[11px] text-ink-3">
-              Inspection logging and repair verification require the admin role.
-              Report findings to your operations admin.
-            </p>
+            <SegmentHistory
+              vibrationHistory={vibrationHistory}
+              activeDefects={activeDefects}
+              repairLog={repairLog}
+              crackCount={crackCount}
+            />
           )}
         </div>
       </motion.section>
@@ -194,6 +239,147 @@ function RiskMeter({ score, status }) {
   );
 }
 
+const HISTORY_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'readings', label: 'Readings' },
+  { id: 'cracks', label: 'Cracks' },
+  { id: 'defects', label: 'Defects' },
+  { id: 'repairs', label: 'Repairs' },
+];
+
+function historyTime(iso) {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' })} ${d.toLocaleTimeString(undefined, { hour12: false })}`;
+}
+
+/**
+ * SegmentHistory — the segment's chronological record, newest first:
+ * telemetry readings (vibration + crack flags), defects as they were logged,
+ * and verified repairs attributed to the worker who closed the work order.
+ * Monospaced rows, hairline dividers, severity tints only on genuine events.
+ */
+function SegmentHistory({ vibrationHistory = [], activeDefects = [], repairLog = [], crackCount = 0 }) {
+  const [filter, setFilter] = useState('all');
+
+  const events = [
+    ...vibrationHistory.map((h) => ({
+      t: h.timestamp,
+      type: h.crackDetected ? 'cracks' : 'readings',
+      vib: h.vibrationLevel,
+      crackDetected: h.crackDetected,
+    })),
+    ...activeDefects.map((d) => ({
+      t: d.reportedAt,
+      type: 'defects',
+      defectType: d.defectType || 'defect',
+      severity: d.severity || 'medium',
+      defectId: d.defectId,
+    })),
+    ...repairLog.map((r) => ({
+      t: r.repairedAt,
+      type: 'repairs',
+      defectType: r.defectType,
+      repairedBy: r.repairedBy,
+      workOrderId: r.workOrderId,
+    })),
+  ].sort((a, b) => new Date(b.t) - new Date(a.t));
+
+  const visible = events.filter((e) => {
+    if (filter === 'all') return true;
+    if (filter === 'readings') return e.type === 'readings' || e.type === 'cracks';
+    return e.type === filter;
+  });
+
+  const counts = {
+    cracks: events.filter((e) => e.type === 'cracks').length,
+    defects: activeDefects.length,
+    repairs: repairLog.length,
+  };
+
+  return (
+    <div>
+      {/* Context strip: what the record contains right now */}
+      <p className="font-mono text-[10px] text-ink-3 mb-2">
+        {vibrationHistory.length} readings · {crackCount} open cracks · {counts.defects} active defects · {counts.repairs} repairs
+      </p>
+
+      {/* Filter rail */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-3" role="group" aria-label="History filter">
+        {HISTORY_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            aria-pressed={filter === f.id}
+            className={`px-2.5 py-1 rounded-full font-mono text-[10px] uppercase tracking-wide border
+              transition-colors duration-150 cursor-pointer
+              ${filter === f.id
+                ? 'bg-accent/15 border-accent/30 text-accent'
+                : 'bg-surface-2 border-line text-ink-3 hover:text-ink-2'}`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="text-[11px] text-ink-3 py-6 text-center">
+          No {filter === 'all' ? 'events' : filter} recorded for this segment yet.
+        </p>
+      ) : (
+        <div className="divide-y divide-line border border-line rounded-lg overflow-hidden max-h-[340px] overflow-y-auto">
+          {visible.map((e, i) => (
+            <HistoryRow key={`${e.type}-${e.t}-${i}`} event={e} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryRow({ event }) {
+  return (
+    <div className="flex items-baseline gap-2.5 px-3 py-1.5 font-mono text-[11px] bg-surface-1">
+      <span className="text-ink-3 whitespace-nowrap shrink-0">{historyTime(event.t)}</span>
+
+      {event.type === 'readings' && (
+        <span className="text-ink-2">{event.vib?.toFixed(2)} <span className="text-ink-3">mm/s</span></span>
+      )}
+
+      {event.type === 'cracks' && (
+        <>
+          <span className="text-ink-2">{event.vib?.toFixed(2)} <span className="text-ink-3">mm/s</span></span>
+          <span className="chip-warn ml-auto">crack detected</span>
+        </>
+      )}
+
+      {event.type === 'defects' && (
+        <>
+          <span className="text-ink">{event.defectType}</span>
+          <span
+            className={`ml-auto ${
+              event.severity === 'critical' || event.severity === 'high' ? 'chip-crit' : 'chip-warn'
+            }`}
+          >
+            {event.severity}
+          </span>
+        </>
+      )}
+
+      {event.type === 'repairs' && (
+        <>
+          <span className="text-ink">
+            <span className="text-accent">{event.repairedBy}</span> fixed {event.defectType}
+          </span>
+          <span className="ml-auto flex items-center gap-2">
+            {event.workOrderId && <span className="text-ink-3">{event.workOrderId}</span>}
+            <span className="chip-ok">repaired</span>
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** One live instrument readout. Severity color only when the factor is in alarm. */
 function Readout({ label, value, unit, alert }) {
   const valueColor = alert === 'crit' ? 'text-crit' : alert === 'warn' ? 'text-warn' : 'text-ink';
@@ -210,10 +396,10 @@ function Readout({ label, value, unit, alert }) {
 
 /**
  * RiskFactors — decomposes the score using the documented model weights
- * (vibration 40%, cracks 25%, incidents 20%, inspection age 15%).
+ * (vibration 35%, cracks 25%, incidents 15%, age 10%, curvature 15%).
  * Bars show each factor's normalized stress level; weights are the real constants.
  */
-function RiskFactors({ vibrationLevel = 0, crackCount = 0, incidentCount = 0, daysSinceInspection = 0 }) {
+function RiskFactors({ vibrationLevel = 0, crackCount = 0, incidentCount = 0, daysSinceInspection = 0, radiusOfCurvature }) {
   const factors = [
     {
       label: 'Vibration',
@@ -244,6 +430,19 @@ function RiskFactors({ vibrationLevel = 0, crackCount = 0, incidentCount = 0, da
       alarm: daysSinceInspection > 15 ? 'warn' : null,
     },
   ];
+
+  // Curvature appears once route geometry has been computed for this segment.
+  // Penalty scales inversely with circumcircle radius; 0 = straight = no risk.
+  if (radiusOfCurvature !== undefined) {
+    const curved = radiusOfCurvature > 0;
+    factors.push({
+      label: 'Curvature',
+      reading: curved ? `R ${Math.round(radiusOfCurvature)}m` : 'straight',
+      weight: WEIGHT_CURVATURE,
+      norm: curved ? Math.min(300 / radiusOfCurvature, 1) : 0,
+      alarm: curved && radiusOfCurvature <= 400 ? 'crit' : curved && radiusOfCurvature <= 1000 ? 'warn' : null,
+    });
+  }
 
   return (
     <div>

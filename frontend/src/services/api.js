@@ -60,6 +60,11 @@ export const getWorkOrders = (status) => {
   return client.get(`/api/work-orders${params}`).then(r => r.data);
 };
 
+// Advance a work order's worker status one step:
+// unacknowledged → acknowledged → in_progress → done
+export const progressWorkOrder = (workOrderId) =>
+  client.post(`/api/work-orders/${workOrderId}/progress`).then(r => r.data);
+
 // Demo Scenarios
 export const triggerScenario = (scenario) =>
   client.post("/api/demo/scenario", { scenario }).then(r => r.data);

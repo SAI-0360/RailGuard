@@ -110,11 +110,30 @@ function createAiRoutes(workOrders) {
         if (pendingWo) {
           pendingWo.status = "completed";
           pendingWo.completedAt = new Date().toISOString();
+          pendingWo.workerStatus = "done";
+          pendingWo.statusHistory = pendingWo.statusHistory || [];
+          pendingWo.statusHistory.push({
+            status: "done",
+            at: pendingWo.completedAt,
+            by: "VERIFICATION",
+          });
           logActivity("DISPATCH", "WORK_ORDER",
             `Work order ${pendingWo.workOrderId} completed — ${seg.segmentId} repaired`,
             "info"
           );
         }
+
+        // Repair attribution — feeds the segment History timeline:
+        // which worker fixed which defect, confirmed by verification.
+        seg.repairLog = seg.repairLog || [];
+        seg.repairLog.push({
+          repairedAt: new Date().toISOString(),
+          defectId,
+          defectType: defect.defectType || "defect",
+          workOrderId: pendingWo ? pendingWo.workOrderId : null,
+          repairedBy: pendingWo ? pendingWo.assignedWorker : "Maintenance crew",
+          confidence: repair.confidence,
+        });
       }
 
       segments.save();

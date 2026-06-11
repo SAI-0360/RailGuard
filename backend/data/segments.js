@@ -63,7 +63,8 @@ function saveSegments() {
       daysSinceInspection: item.daysSinceInspection,
       lastUpdated: item.lastUpdated,
       activeDefects: item.activeDefects,
-      vibrationHistory: item.vibrationHistory
+      vibrationHistory: item.vibrationHistory,
+      repairLog: item.repairLog || []
     }));
     fs.writeFileSync(cachePath, JSON.stringify(rawArray, null, 2), "utf8");
   } catch (e) {

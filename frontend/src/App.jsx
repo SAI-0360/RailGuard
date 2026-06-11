@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import SituationBar from './components/SituationBar';
 import RouteFilter from './components/RouteFilter';
+import LiveMap from './components/LiveMap';
 import CriticalBanner from './components/CriticalBanner';
 import AttentionQueue from './components/AttentionQueue';
 import TrackStrip from './components/TrackStrip';
@@ -19,6 +21,13 @@ import useActivityLog from './hooks/useActivityLog';
 import useWorkOrders from './hooks/useWorkOrders';
 import useMonitoring from './hooks/useMonitoring';
 
+const VIEW_TABS = [
+  { id: 'console', label: 'Console' },
+  { id: 'map', label: 'Live map' },
+];
+
+const swiftOut = [0.23, 1, 0.32, 1];
+
 /**
  * RailGuard Operations Console.
  *
@@ -31,6 +40,8 @@ function Console() {
   // Route scope: null = default full-corridor view; otherwise the backend
   // JIT-computes segments for { startStation, endStation } from raw track data
   const [routeQuery, setRouteQuery] = useState(null);
+  // Primary column view: schematic worklist or geographic live map
+  const [view, setView] = useState('console');
   const { segments, routeInfo, loading: loadingSegments, error: errorSegments, refetch: refetchSegments } = useSegments(routeQuery);
   const { stats, error: errorStats, refetch: refetchStats } = useStats();
   const {
@@ -117,23 +128,69 @@ function Console() {
       <main className="max-w-[1500px] mx-auto px-4 lg:px-6 py-4 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 items-start">
         {/* Primary: the worklist, spatial reference, and accountability ledger */}
         <div className="flex flex-col gap-4 min-w-0">
-          <AttentionQueue
-            segments={visibleSegments}
-            workOrders={visibleWorkOrders}
-            selectedId={selectedSegment?.segmentId}
-            onSelect={selectSegment}
-            loading={loadingSegments}
-          />
           <RouteFilter
             routeQuery={routeQuery}
             routeInfo={routeInfo}
             onRouteChange={setRouteQuery}
           />
-          <TrackStrip
-            segments={visibleSegments}
-            selectedId={selectedSegment?.segmentId}
-            onSelect={selectSegment}
-          />
+
+          {/* View tabs: schematic console vs geographic map. Same data, two lenses. */}
+          <div role="tablist" aria-label="Primary view" className="flex items-center gap-1 border-b border-line -mb-2">
+            {VIEW_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={view === tab.id}
+                onClick={() => setView(tab.id)}
+                className={`relative px-3 py-2 text-xs font-medium transition-colors duration-150 cursor-pointer
+                  ${view === tab.id ? 'text-ink' : 'text-ink-3 hover:text-ink-2'}`}
+              >
+                {tab.label}
+                {view === tab.id && (
+                  <motion.span
+                    layoutId="view-tab-underline"
+                    className="absolute inset-x-1 -bottom-px h-[2px] bg-accent rounded-full"
+                    transition={{ duration: 0.18, ease: swiftOut }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={view}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: swiftOut }}
+              className="flex flex-col gap-4 min-w-0"
+            >
+              {view === 'console' ? (
+                <>
+                  <AttentionQueue
+                    segments={visibleSegments}
+                    workOrders={visibleWorkOrders}
+                    selectedId={selectedSegment?.segmentId}
+                    onSelect={selectSegment}
+                    loading={loadingSegments}
+                  />
+                  <TrackStrip
+                    segments={visibleSegments}
+                    selectedId={selectedSegment?.segmentId}
+                    onSelect={selectSegment}
+                  />
+                </>
+              ) : (
+                <LiveMap
+                  segments={visibleSegments}
+                  selectedId={selectedSegment?.segmentId}
+                  onSelect={selectSegment}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
+
           <ActivityLedger logs={logs} live={monitoring.active} />
         </div>
 

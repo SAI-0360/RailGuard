@@ -17,8 +17,10 @@ router.post("/demo/scenario", protect, adminOnly, (req, res) => {
       return res.status(404).json({ error: `Segment ${targetId} not found` });
     }
 
-    // Degrade SEG-042 to critical
-    seg.crackCount = 2;
+    // Degrade SEG-042 to critical. crackCount 3 saturates the crack component,
+    // keeping this scenario above the 60 threshold under the rebalanced
+    // weights (V .35 / C .25 / I .15 / A .10 / curvature .15) even on straight track.
+    seg.crackCount = 3;
     seg.incidentCount = 1;
     seg.daysSinceInspection = 12;
 
@@ -56,7 +58,7 @@ router.post("/demo/scenario", protect, adminOnly, (req, res) => {
 
     targets.forEach((seg, index) => {
       const isCritical = index % 2 === 0;
-      seg.crackCount = isCritical ? 2 : 1;
+      seg.crackCount = isCritical ? 3 : 1; // 3 saturates crack component → reliably critical
       seg.incidentCount = isCritical ? 1 : 0;
       seg.daysSinceInspection = isCritical ? 15 : 8;
 

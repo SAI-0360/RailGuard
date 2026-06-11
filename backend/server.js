@@ -17,6 +17,7 @@ const statsRoutes = require("./routes/statsRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const createMonitoringRoutes = require("./routes/monitoringRoutes");
 const createWorkOrderRoutes = require("./routes/workOrderRoutes");
+const { assignWorkOrder } = createWorkOrderRoutes;
 const demoRoutes = require("./routes/demoRoutes");
 const errorHandler = require("./middleware/errorHandler");
 
@@ -81,8 +82,10 @@ function runMonitoringCycle() {
       );
     }
 
-    // Auto work order generation — fires when a segment transitions INTO critical
-    if (previousStatus !== "critical" && status === "critical") {
+    // Auto work order generation — any critical segment without a pending
+    // order gets one. State-based (not transition-based) so segments degraded
+    // outside the cycle (demo scenarios, simulator) are still dispatched.
+    if (status === "critical") {
       const existingPending = workOrders.find(
         wo => wo.segmentId === seg.segmentId && wo.status === "pending"
       );
@@ -99,9 +102,10 @@ function runMonitoringCycle() {
           createdAt: new Date().toISOString(),
           completedAt: null
         };
+        assignWorkOrder(wo, seg); // owning field worker + 4h deadline + telemetry snapshot
         workOrders.push(wo);
         logActivity("DISPATCH", "WORK_ORDER",
-          `Auto-generated ${wo.workOrderId} for ${seg.segmentId} (priority: ${wo.priority})`,
+          `Auto-generated ${wo.workOrderId} for ${seg.segmentId} → ${wo.assignedWorker} (priority: ${wo.priority}, due ${wo.deadline.slice(11, 16)} UTC)`,
           "critical"
         );
       }
