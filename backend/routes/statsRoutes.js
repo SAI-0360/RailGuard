@@ -22,6 +22,7 @@ router.get("/stats", (req, res) => {
     else if (status === "critical") critical++;
   });
 
+  segments.save();
   res.json({ total: 100, healthy, warning, critical });
 });
 
@@ -39,6 +40,7 @@ router.post("/reset-all", (req, res) => {
     segment.status = status;
   });
 
+  segments.save();
   res.json({ segments });
 });
 
