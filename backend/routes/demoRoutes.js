@@ -45,6 +45,7 @@ router.post("/demo/scenario", protect, adminOnly, (req, res) => {
 
     logActivity("SYSTEM", "START", `Demo Scenario: Degraded ${targetId} to critical status (risk: ${riskScore})`, "critical");
 
+    segments.save();
     return res.json({ message: `Segment ${targetId} degraded to critical`, segment: seg });
   }
 
@@ -84,6 +85,7 @@ router.post("/demo/scenario", protect, adminOnly, (req, res) => {
 
     logActivity("SYSTEM", "START", `Demo Scenario: Mass degradation initiated on ${degraded.join(", ")}`, "warning");
 
+    segments.save();
     return res.json({ message: `Mass degradation initiated on: ${degraded.join(", ")}`, segments: targets });
   }
 
@@ -113,6 +115,7 @@ router.post("/demo/scenario", protect, adminOnly, (req, res) => {
 
     logActivity("SYSTEM", "START", "Demo Scenario: All track segments reset to healthy baseline", "info");
 
+    segments.save();
     return res.json({ message: "All segments reset to healthy" });
   }
 

@@ -51,6 +51,7 @@ router.get("/segments", (req, res) => {
       segment.status = status;
       segment.lastUpdated = now;
     });
+    segments.save();
     return res.json({ segments });
   }
 
@@ -70,6 +71,7 @@ router.get("/segments", (req, res) => {
     return segment;
   });
 
+  segments.save();
   res.json({ segments: routeSegments, route: geo.route });
 });
 
@@ -90,6 +92,7 @@ router.get("/segments/:segmentId", (req, res) => {
   const prediction = predictTimeToCritical(segment);
   const trendSummary = getTrendSummary(segment);
 
+  segments.save();
   res.json({ segment: { ...segment, prediction, trendSummary } });
 });
 
@@ -155,6 +158,7 @@ router.post("/segments/:segmentId/simulate", protect, adminOnly, (req, res) => {
   seg.status = status;
   seg.lastUpdated = new Date().toISOString();
 
+  segments.save();
   res.json({ segment: seg });
 });
 
