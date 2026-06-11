@@ -8,6 +8,7 @@ const router = express.Router();
 const segments = require("../data/segments");
 const { calculateRisk, predictTimeToCritical, getTrendSummary } = require("../services/riskEngine");
 const { MAX_VIBRATION_HISTORY } = require("../utils/constants");
+const { protect, adminOnly } = require("../middleware/auth");
 
 // GET /api/segments — return all 100 segments with recalculated risk
 router.get("/segments", (req, res) => {
@@ -41,8 +42,8 @@ router.get("/segments/:segmentId", (req, res) => {
   res.json({ segment: { ...segment, prediction, trendSummary } });
 });
 
-// POST /api/segments/:segmentId/simulate — simulate spike/crack/reset actions
-router.post("/segments/:segmentId/simulate", (req, res) => {
+// POST /api/segments/:segmentId/simulate — simulate spike/crack/reset actions (admin only)
+router.post("/segments/:segmentId/simulate", protect, adminOnly, (req, res) => {
   const { segmentId } = req.params;
   const { action, value } = req.body;
 

@@ -5,6 +5,7 @@ const express = require("express");
 const router = express.Router();
 const segments = require("../data/segments");
 const { calculateRisk } = require("../services/riskEngine");
+const { protect, adminOnly } = require("../middleware/auth");
 
 // GET /api/stats — aggregate counts by status
 router.get("/stats", (req, res) => {
@@ -25,8 +26,8 @@ router.get("/stats", (req, res) => {
   res.json({ total: 100, healthy, warning, critical });
 });
 
-// POST /api/reset-all — reset every segment to healthy defaults
-router.post("/reset-all", (req, res) => {
+// POST /api/reset-all — reset every segment to healthy defaults (admin only)
+router.post("/reset-all", protect, adminOnly, (req, res) => {
   segments.forEach((segment) => {
     segment.vibrationLevel = 2.0;
     segment.crackCount = 0;

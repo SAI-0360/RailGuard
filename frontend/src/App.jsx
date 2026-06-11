@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import SituationBar from './components/SituationBar';
 import CriticalBanner from './components/CriticalBanner';
 import AttentionQueue from './components/AttentionQueue';
@@ -7,6 +8,9 @@ import FocusPanel from './components/FocusPanel';
 import ActivityLedger from './components/ActivityLedger';
 import WorkOrderPipeline from './components/WorkOrderPipeline';
 import DrillPanel from './components/DrillPanel';
+import LoginPage from './components/LoginPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import useSegments from './hooks/useSegments';
 import useStats from './hooks/useStats';
 import useSelectedSegment from './hooks/useSelectedSegment';
@@ -17,11 +21,12 @@ import useMonitoring from './hooks/useMonitoring';
 /**
  * RailGuard Operations Console.
  *
- * Work-by-exception layout: the Attention Queue (degraded segments, triaged)
- * is the primary surface; the Focus Panel binds to the selected incident;
- * healthy segments collapse to a count, a search, and the track schematic.
+ * Role scoping: admins see the whole network plus drill controls; workers
+ * see only their assignedSegments, with severity counts derived from that
+ * scope so the Situation Bar never claims more than the operator owns.
  */
-export default function App() {
+function Console() {
+  const { user, logout } = useAuth();
   const { segments, loading: loadingSegments, error: errorSegments, refetch: refetchSegments } = useSegments();
   const { stats, error: errorStats, refetch: refetchStats } = useStats();
   const {
@@ -35,6 +40,36 @@ export default function App() {
   const { logs } = useActivityLog();
   const { workOrders } = useWorkOrders();
   const monitoring = useMonitoring();
+
+  const isAdmin = user?.role === 'admin';
+
+  // Worker scope: only assigned segments exist in their console
+  const assignedSet = useMemo(
+    () => new Set(user?.assignedSegments || []),
+    [user]
+  );
+  const visibleSegments = useMemo(
+    () => (isAdmin ? segments : segments.filter((s) => assignedSet.has(s.segmentId))),
+    [segments, isAdmin, assignedSet]
+  );
+  const visibleWorkOrders = useMemo(
+    () => (isAdmin ? workOrders : workOrders.filter((wo) => assignedSet.has(wo.segmentId))),
+    [workOrders, isAdmin, assignedSet]
+  );
+
+  // Situation Bar truth follows the operator's scope
+  const visibleStats = useMemo(() => {
+    if (isAdmin) return stats;
+    let healthy = 0;
+    let warning = 0;
+    let critical = 0;
+    visibleSegments.forEach((s) => {
+      if (s.status === 'critical') critical++;
+      else if (s.status === 'warning') warning++;
+      else healthy++;
+    });
+    return { total: visibleSegments.length, healthy, warning, critical };
+  }, [isAdmin, stats, visibleSegments]);
 
   const handleActionComplete = (actionName, segmentId) => {
     refetchSegments();
@@ -56,10 +91,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg text-ink">
-      <SituationBar stats={stats} monitoring={monitoring} />
+      <SituationBar
+        stats={visibleStats}
+        monitoring={monitoring}
+        user={user}
+        onLogout={logout}
+      />
 
       {/* Escalation tier: persistent until acknowledged, motionless once present */}
-      <CriticalBanner segments={segments} onSelect={selectSegment} />
+      <CriticalBanner segments={visibleSegments} onSelect={selectSegment} />
 
       {/* Connection failure: solid, plain, no decoration */}
       {errorMessage && (
@@ -74,14 +114,14 @@ export default function App() {
         {/* Primary: the worklist, spatial reference, and accountability ledger */}
         <div className="flex flex-col gap-4 min-w-0">
           <AttentionQueue
-            segments={segments}
-            workOrders={workOrders}
+            segments={visibleSegments}
+            workOrders={visibleWorkOrders}
             selectedId={selectedSegment?.segmentId}
             onSelect={selectSegment}
             loading={loadingSegments}
           />
           <TrackStrip
-            segments={segments}
+            segments={visibleSegments}
             selectedId={selectedSegment?.segmentId}
             onSelect={selectSegment}
           />
@@ -93,14 +133,36 @@ export default function App() {
           <FocusPanel
             segment={selectedSegment}
             loading={loadingSelected}
+            canAct={isAdmin}
             onClose={clearSelection}
             onDefectExtracted={refreshAll}
             onRepairVerified={refreshAll}
           />
-          <WorkOrderPipeline workOrders={workOrders} onSelectSegment={selectSegment} />
-          <DrillPanel onActionComplete={handleActionComplete} />
+          <WorkOrderPipeline workOrders={visibleWorkOrders} onSelectSegment={selectSegment} />
+          {/* Drill mode is an admin instrument; workers never see synthetic controls */}
+          {isAdmin && <DrillPanel onActionComplete={handleActionComplete} />}
         </div>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <Console />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

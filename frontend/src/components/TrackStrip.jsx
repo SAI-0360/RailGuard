@@ -25,7 +25,10 @@ export default function TrackStrip({ segments = [], selectedId, onSelect }) {
       >
         <h2 className="panel-title">Track schematic</h2>
         <span className="font-mono text-[10px] text-ink-3">
-          SEG-001 to SEG-{String(segments.length || 100).padStart(3, '0')} · {open ? 'hide' : 'show'}
+          {segments.length > 0
+            ? `${segments[0].segmentId} to ${segments[segments.length - 1].segmentId}`
+            : 'no segments'}{' '}
+          · {open ? 'hide' : 'show'}
         </span>
       </button>
 

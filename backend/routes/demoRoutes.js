@@ -4,9 +4,10 @@ const segments = require("../data/segments");
 const { calculateRisk } = require("../services/riskEngine");
 const { logActivity } = require("../services/activityLogger");
 const { MAX_VIBRATION_HISTORY } = require("../utils/constants");
+const { protect, adminOnly } = require("../middleware/auth");
 
-// POST /api/demo/scenario — Run preset demo scenarios
-router.post("/demo/scenario", (req, res) => {
+// POST /api/demo/scenario — Run preset demo scenarios (admin only)
+router.post("/demo/scenario", protect, adminOnly, (req, res) => {
   const { scenario } = req.body;
 
   if (scenario === "critical_degrade") {

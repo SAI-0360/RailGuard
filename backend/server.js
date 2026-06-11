@@ -7,6 +7,10 @@ const { calculateRisk, predictTimeToCritical } = require("./services/riskEngine"
 const { logActivity } = require("./services/activityLogger");
 const { MAX_VIBRATION_HISTORY, MONITORING_INTERVAL_MS } = require("./utils/constants");
 
+const { connectDB } = require("./config/db");
+const seedUsers = require("./utils/seedUsers");
+
+const authRoutes = require("./routes/authRoutes");
 const segmentRoutes = require("./routes/segmentRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const statsRoutes = require("./routes/statsRoutes");
@@ -148,7 +152,14 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// MongoDB connection + demo user seeding — before routes. Connection failure
+// is non-fatal: the in-memory demo flow must survive a missing database.
+connectDB().then((connected) => {
+  if (connected) seedUsers();
+});
+
 // Route mounts
+app.use("/api/auth", authRoutes);
 app.use("/api", segmentRoutes);
 app.use("/api", aiRoutes);
 app.use("/api", statsRoutes);

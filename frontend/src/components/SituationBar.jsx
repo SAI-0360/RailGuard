@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 
 /**
  * SituationBar — persistent system truth at the top of the console.
- * Health index, severity counts, agent state + control, clock.
+ * Health index, severity counts, agent state + control, operator identity, clock.
  * Replaces the old header + MetricCards: 97 healthy segments cost one number, not four cards.
  */
-export default function SituationBar({ stats, monitoring }) {
+export default function SituationBar({ stats, monitoring, user, onLogout }) {
   const { total = 100, healthy = 0, warning = 0, critical = 0 } = stats || {};
   const healthIndex = total > 0 ? ((healthy / total) * 100).toFixed(1) : '0.0';
 
@@ -35,6 +35,7 @@ export default function SituationBar({ stats, monitoring }) {
         <div className="ml-auto flex items-center gap-4">
           <AgentStatus monitoring={monitoring} />
           <Clock />
+          {user && <Identity user={user} onLogout={onLogout} />}
         </div>
       </div>
     </header>
@@ -66,6 +67,22 @@ function AgentStatus({ monitoring }) {
         className={`${active ? 'btn-ghost' : 'btn-accent'} px-2.5 py-1`}
       >
         {active ? 'Stop agent' : 'Start agent'}
+      </button>
+    </div>
+  );
+}
+
+/** Operator identity: name, role chip, sign out. */
+function Identity({ user, onLogout }) {
+  const isAdmin = user.role === 'admin';
+  return (
+    <div className="flex items-center gap-2 pl-4 border-l border-line">
+      <span className="hidden lg:block text-xs text-ink-2">{user.name}</span>
+      <span className={`chip ${isAdmin ? 'bg-accent/10 text-accent' : 'bg-surface-3 text-ink-2'}`}>
+        {user.role}
+      </span>
+      <button onClick={onLogout} className="btn-ghost px-2.5 py-1">
+        Sign out
       </button>
     </div>
   );

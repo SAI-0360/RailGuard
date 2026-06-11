@@ -10,9 +10,10 @@ const { extractDefect } = require("../services/geminiExtractor");
 const { verifyRepair } = require("../services/geminiVerifier");
 const { generateDefectId, generateRepairId } = require("../utils/idGenerator");
 const { logActivity } = require("../services/activityLogger");
+const { protect, adminOnly } = require("../middleware/auth");
 
-// POST /api/extract-defect
-router.post("/extract-defect", async (req, res, next) => {
+// POST /api/extract-defect (admin only)
+router.post("/extract-defect", protect, adminOnly, async (req, res, next) => {
   try {
     const { segmentId, reportText } = req.body;
 
@@ -52,8 +53,8 @@ router.post("/extract-defect", async (req, res, next) => {
   }
 });
 
-// POST /api/verify-repair
-router.post("/verify-repair", async (req, res, next) => {
+// POST /api/verify-repair (admin only)
+router.post("/verify-repair", protect, adminOnly, async (req, res, next) => {
   try {
     const { segmentId, defectId, repairDescription } = req.body;
 
