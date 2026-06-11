@@ -8,7 +8,7 @@ const { logActivity } = require("./services/activityLogger");
 const { MAX_VIBRATION_HISTORY, MONITORING_INTERVAL_MS } = require("./utils/constants");
 
 const segmentRoutes = require("./routes/segmentRoutes");
-const aiRoutes = require("./routes/aiRoutes");
+const createAiRoutes = require("./routes/aiRoutes");
 const statsRoutes = require("./routes/statsRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const createMonitoringRoutes = require("./routes/monitoringRoutes");
@@ -109,6 +109,9 @@ function runMonitoringCycle() {
     else criticalCount++;
   });
 
+  // Save changes to local segments.json cache
+  segments.save();
+
   logActivity("MONITOR", "SCAN",
     `Cycle #${cycleCount} complete: ${healthyCount} healthy, ${warningCount} warning, ${criticalCount} critical`,
     criticalCount > 0 ? "warning" : "info"
@@ -150,7 +153,7 @@ app.use(express.json());
 
 // Route mounts
 app.use("/api", segmentRoutes);
-app.use("/api", aiRoutes);
+app.use("/api", createAiRoutes(workOrders));
 app.use("/api", statsRoutes);
 app.use("/api/activity-log", activityLogRoutes);
 app.use("/api/monitoring", createMonitoringRoutes({ startMonitoring, stopMonitoring, getMonitoringState }));
