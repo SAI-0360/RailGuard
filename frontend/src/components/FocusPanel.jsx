@@ -32,12 +32,14 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
   const status = segment?.status;
 
   // Proactive dispatch eligibility — must be above early returns (rules of hooks).
-  // (A) user is SSE, (B) segment status is 'warning', (C) no active pending work orders
+  // (A) user is SSE/admin, (B) segment is degraded (warning OR critical), (C) no
+  // active pending work order yet. Critical segments are included so the SSE can
+  // manually scramble a crew before autonomous escalation has drafted an order.
   const hasActiveWorkOrder = useMemo(
     () => workOrders.some((wo) => wo.segmentId === segmentId && wo.status === 'pending'),
     [workOrders, segmentId]
   );
-  const showProactiveDispatch = (userRole === 'sse' || userRole === 'admin') && status === 'warning' && !hasActiveWorkOrder;
+  const showProactiveDispatch = (userRole === 'sse' || userRole === 'admin') && status !== 'healthy' && !hasActiveWorkOrder;
 
   // Auto-analyse a degraded segment when it enters focus. Healthy track needs
   // no narration; cached segments display instantly without another API call.
@@ -237,9 +239,9 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
 
               <DefectList defects={activeDefects} segmentId={segmentId} />
 
-              {/* Proactive Dispatch — SSE manually assigns a crew to a warning
+              {/* Proactive Dispatch — SSE manually assigns a crew to a degraded
                   segment before autonomous escalation kicks in. Only rendered when
-                  all three conditions are met (SSE + warning + no active WO). */}
+                  all three conditions are met (SSE + warning/critical + no active WO). */}
               {showProactiveDispatch && (
                 <ProactiveDispatch
                   segmentId={segmentId}

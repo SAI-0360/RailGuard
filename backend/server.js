@@ -21,7 +21,7 @@ const configRoutes = require("./routes/configRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const createMonitoringRoutes = require("./routes/monitoringRoutes");
 const createWorkOrderRoutes = require("./routes/workOrderRoutes");
-const { assignWorkOrder } = createWorkOrderRoutes;
+const { assignWorkOrder, refreshRosterFromDB, isInDispatchCooldown } = createWorkOrderRoutes;
 const demoRoutes = require("./routes/demoRoutes");
 const errorHandler = require("./middleware/errorHandler");
 
@@ -89,11 +89,15 @@ function runMonitoringCycle() {
     // Auto work order generation — any critical segment without a pending
     // order gets one. State-based (not transition-based) so segments degraded
     // outside the cycle (demo scenarios, simulator) are still dispatched.
+    // A post-resolution cooldown suppresses duplicate spam: once a ticket is
+    // completed, the segment gets a grace window for sensors to settle before
+    // a fresh ticket can be auto-raised.
     if (status === "critical") {
       const existingPending = workOrders.find(
         wo => wo.segmentId === seg.segmentId && wo.status === "pending"
       );
-      if (!existingPending) {
+      const cooling = isInDispatchCooldown(workOrders, seg.segmentId);
+      if (!existingPending && !cooling) {
         workOrderCounter++;
         const wo = {
           workOrderId: `WO-${seg.segmentId}-${String(workOrderCounter).padStart(3, "0")}`,
@@ -165,9 +169,19 @@ app.use(express.json());
 
 // MongoDB connection + demo user seeding — before routes. Connection failure
 // is non-fatal: the in-memory demo flow must survive a missing database.
-connectDB().then((connected) => {
-  if (connected) seedUsers();
+connectDB().then(async (connected) => {
+  if (connected) {
+    await seedUsers();
+    // Prime the dispatch roster from the freshly-seeded users so auto-dispatch
+    // follows live JE ownership from the first cycle.
+    await refreshRosterFromDB();
+  }
 });
+
+// Keep the dispatch roster in sync with admin edits to the user table without a
+// restart. Best-effort and no-op while Mongo is down (static roster stands in).
+const ROSTER_REFRESH_MS = 60 * 1000;
+setInterval(() => { refreshRosterFromDB().catch(() => {}); }, ROSTER_REFRESH_MS);
 
 // Route mounts
 app.use("/api/auth", authRoutes);
