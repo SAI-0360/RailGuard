@@ -134,7 +134,7 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
           {loading ? (
             <>
               <Spinner />
-              Verifying repair
+              Verifying via AI…
             </>
           ) : (
             'Verify repair'

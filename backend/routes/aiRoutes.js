@@ -179,6 +179,29 @@ function createAiRoutes(workOrders) {
           repairedBy: pendingWo ? pendingWo.assignedWorker : "Maintenance crew",
           confidence: repair.confidence,
         });
+      } else {
+        // Verification failed — the AI judged the repair inadequate. Without
+        // this branch the work order is stranded at workerStatus "done": the JE
+        // can't edit or re-submit and the loop deadlocks. Roll the worker status
+        // back to "in_progress" so the JE can correct and report done again, and
+        // attach the AI's reasoning so they know exactly what to fix.
+        const pendingWo = workOrders.find(
+          wo => wo.segmentId === seg.segmentId && wo.status === "pending"
+        );
+        if (pendingWo) {
+          pendingWo.workerStatus = "in_progress";
+          pendingWo.rejectionReason = repair.verificationReasoning || "Repair did not adequately address the defect.";
+          pendingWo.statusHistory = pendingWo.statusHistory || [];
+          pendingWo.statusHistory.push({
+            status: "verification_rejected",
+            at: new Date().toISOString(),
+            by: "VERIFICATION",
+          });
+          logActivity("DISPATCH", "WORK_ORDER",
+            `Verification rejected for ${pendingWo.workOrderId} (${seg.segmentId}): ${pendingWo.rejectionReason.substring(0, 60)}…`,
+            "warning"
+          );
+        }
       }
 
       segments.save();

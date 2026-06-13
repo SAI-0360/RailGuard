@@ -311,6 +311,15 @@ function FieldCard({
     !muted && onEscalate && workerStatus === 'acknowledged' && !escalationStatus;
   const showPrimary = canAct && nextLabel; // awaiting_guidance has no nextLabel
 
+  // The completion report is mandatory on the "Mark Done" step: an empty report
+  // would reach the SSE's AI verifier as an empty string and be rejected
+  // outright. Gate the button until the JE has written what they did.
+  const reportRequired = workerStatus === 'in_progress';
+  const primaryDisabled = busy || (reportRequired && !reportText.trim());
+  // Set by the backend when the AI verifier bounces a submitted repair; the
+  // work order is rolled back to in_progress so the JE can correct and re-submit.
+  const rejectionReason = !muted ? order.rejectionReason : null;
+
   return (
     <div className="panel overflow-hidden">
       <button
@@ -376,10 +385,24 @@ function FieldCard({
             </div>
           )}
 
-          {/* Field report — captured on the final step, sent to the SSE for verification */}
+          {/* AI verifier bounced a prior submission — show why, so the JE can
+              correct the work before reporting done again. */}
+          {rejectionReason && workerStatus === 'in_progress' && (
+            <div className="rounded-lg border border-crit/30 bg-crit/[0.07] px-3 py-2.5">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-crit mb-1">
+                ⚠ Verification rejected
+              </p>
+              <p className="text-xs text-ink-2 leading-relaxed whitespace-pre-wrap">
+                {rejectionReason}
+              </p>
+            </div>
+          )}
+
+          {/* Field report — captured on the final step, sent to the SSE for
+              verification. Required: an empty report is rejected by the verifier. */}
           {showPrimary && workerStatus === 'in_progress' && (
             <div>
-              <label className="block text-[11px] text-ink-3 mb-1">Field report (optional)</label>
+              <label className="block text-[11px] text-ink-3 mb-1">Field report (required)</label>
               <textarea
                 value={reportText}
                 onChange={(e) => onReportChange && onReportChange(e.target.value)}
@@ -389,6 +412,9 @@ function FieldCard({
                   placeholder-ink-3 resize-none focus:outline-none focus:border-accent/60
                   transition-colors duration-150"
               />
+              <p className="mt-1 text-[10px] text-ink-3">
+                Describe the repair before marking done — the SSE verifies against this report.
+              </p>
             </div>
           )}
 
@@ -396,7 +422,7 @@ function FieldCard({
           {showPrimary && (
             <button
               onClick={onProgress}
-              disabled={busy}
+              disabled={primaryDisabled}
               className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition-[background-color,transform]
                 duration-150 ease-swift active:scale-[0.99] disabled:opacity-50 cursor-pointer
                 ${workerStatus === 'unacknowledged'
@@ -568,7 +594,10 @@ function DeadlineMeter({ createdAt, deadline, now, acknowledged, done, awaiting,
         <div className="h-1 flex-1 rounded-full overflow-hidden bg-surface-2">
           <div className="h-full bg-ink-3/40" style={{ width: `${fr * 100}%` }} />
         </div>
-        <span className="font-mono text-[11px] whitespace-nowrap text-ink-3">SLA paused · awaiting guidance</span>
+        <span className="inline-flex items-center gap-1 font-mono text-[10px] whitespace-nowrap
+          px-1.5 py-0.5 rounded border border-accent/30 bg-accent/10 text-accent">
+          <span aria-hidden="true">❄</span> SLA FROZEN · awaiting guidance
+        </span>
       </div>
     );
   }

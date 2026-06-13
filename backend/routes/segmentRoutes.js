@@ -55,27 +55,34 @@ router.get("/segments", (req, res) => {
     return res.json({ segments });
   }
 
-  // Dynamically resize in-memory telemetry array to match the new route length
-  if (segments.resize) {
-    segments.resize(geo.segments.length);
-  }
+  // Filter, never resize. The master telemetry array is the single source of
+  // truth and must always stay at its full length (100 segments) in memory and
+  // on disk — a route is just a *view* over it. We build the set of segment IDs
+  // the computed route covers, then select those segments out of the master
+  // array. (This previously called segments.resize(geo.segments.length), which
+  // truncated the master array; the subsequent segments.save() then permanently
+  // deleted every off-route segment from segments.json.)
+  const allowedIds = new Set(geo.segments.map((g) => g.segmentId));
+  const routeSegments = segments.filter((s) => allowedIds.has(s.segmentId));
 
-  // Merge JIT geometry onto the live telemetry segments (same SEG-NNN ids) so
-  // the simulator, monitoring loop, and detail view stay on one source of truth.
-  const routeSegments = geo.segments.map((g, i) => {
-    const segment = segments[i]; // SEG-001 ↔ index 0: O(1) lookup
-    segment.startCoord = g.startCoord;
-    segment.endCoord = g.endCoord;
-    segment.distanceKm = g.distanceKm;
-    segment.radiusOfCurvature = g.radiusOfCurvature;
-
+  // Merge the JIT geometry onto the matching master segments in place (same
+  // SEG-NNN ids) so the simulator, monitoring loop, and detail view stay on one
+  // source of truth.
+  routeSegments.forEach((segment) => {
+    const g = geo.segments.find((x) => x.segmentId === segment.segmentId);
+    if (g) {
+      segment.startCoord = g.startCoord;
+      segment.endCoord = g.endCoord;
+      segment.distanceKm = g.distanceKm;
+      segment.radiusOfCurvature = g.radiusOfCurvature;
+    }
     const { riskScore, status } = calculateRisk(segment);
     segment.riskScore = riskScore;
     segment.status = status;
     segment.lastUpdated = now;
-    return segment;
   });
 
+  // Persist the full master database (still 100 elements); return only the view.
   segments.save();
   res.json({ segments: routeSegments, route: geo.route });
 });
