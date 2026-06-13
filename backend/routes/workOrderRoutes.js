@@ -10,10 +10,25 @@
 const express = require("express");
 const { protect, jeOnly, sseOnly, denOnly } = require("../middleware/auth");
 const { logActivity } = require("../services/activityLogger");
+const { isDBConnected } = require("../config/db");
+const { SEGMENT_ID_PREFIX } = require("../utils/constants");
 
-// Field crew — the JE (Junior Engineer) accounts from utils/seedUsers.js.
-// Each JE owns a fixed segment range, so dispatch follows ownership.
-const WORKERS = [
+// ---------------------------------------------------------------------------
+// FIELD CREW ROSTER — dynamically synchronized from the DB user table.
+//
+// Dispatch must follow the *current* JE ownership, so an SSE/DEN reassigning a
+// JE's segments (or adding a crew member) is reflected without a server
+// restart. To stay resilient (CONTEXT.md: "the app never crashes / fallbacks
+// are mandatory"), the roster is held in an in-memory cache that:
+//   • boots from the seeded static crew below (identical to the old hardcoded
+//     ranges), so behaviour is unchanged before any DB refresh, and
+//   • is refreshed from the `users` collection whenever Mongo is reachable.
+// The synchronous dispatch path (`workerForSegment`) only ever reads the cache,
+// never the DB, so the 10s monitoring loop can never block or throw on it.
+// ---------------------------------------------------------------------------
+
+// Seeded static crew — the resilient fallback. Ranges mirror utils/seedUsers.js.
+const STATIC_WORKERS = [
   { name: "JE Track Worker 1", email: "je1@railguard.in", fromSeg: 1, toSeg: 33 },
   { name: "JE Track Worker 2", email: "je2@railguard.in", fromSeg: 34, toSeg: 66 },
   { name: "JE Track Worker 3", email: "je3@railguard.in", fromSeg: 67, toSeg: 100 },
@@ -21,14 +36,125 @@ const WORKERS = [
 
 const DEADLINE_HOURS = 4;
 
+// Cooldown after a work order is resolved before the autonomous loop is allowed
+// to auto-dispatch another for the SAME segment. Sensors take a few cycles to
+// reflect a completed repair; without this window a still-critical reading would
+// spam a fresh ticket every monitoring cycle right after a successful fix.
+const AUTO_DISPATCH_COOLDOWN_MS = 60 * 1000; // 60s
+
 // Worker-status lifecycle, in order. status stays "pending" until the repair
 // is verified — "done" is the worker's own report, verification is the agent's.
 const WORKER_STATUS_FLOW = ["unacknowledged", "acknowledged", "in_progress", "done"];
 
-/** Find the roster worker who owns a segment id like "SEG-042". */
+/** "SEG-001".."SEG-033" for an inclusive 1-based range → Set for O(1) lookup. */
+function segmentIdSet(fromSeg, toSeg) {
+  const set = new Set();
+  for (let i = fromSeg; i <= toSeg; i++) {
+    set.add(`${SEGMENT_ID_PREFIX}${String(i).padStart(3, "0")}`);
+  }
+  return set;
+}
+
+// In-memory roster cache: [{ name, email, segments: Set<segmentId> }].
+// Seeded from the static crew so dispatch works before the first DB refresh.
+let rosterCache = STATIC_WORKERS.map((w) => ({
+  name: w.name,
+  email: w.email,
+  segments: segmentIdSet(w.fromSeg, w.toSeg),
+}));
+
+/**
+ * Rebuild the roster cache from a list of user records (canonical JE field
+ * crew). Pure and synchronous — the DB-querying wrapper calls this, and tests
+ * can call it directly with synthetic users to prove admin edits propagate.
+ * Empty/invalid input is ignored so a bad refresh never wipes a working roster.
+ * Segment ownership is first-write-wins after sorting by email, which keeps
+ * canonical `…@railguard.in` crews ahead of any legacy `…@railguard.com` ones.
+ * @param {Array<{name,email,assignedSegments:string[]}>} users
+ * @returns {boolean} true if the roster was replaced
+ */
+function setRosterFromUsers(users) {
+  if (!Array.isArray(users) || users.length === 0) return false;
+  const claimed = new Set();
+  const next = [];
+  [...users]
+    .sort((a, b) => String(a.email).localeCompare(String(b.email)))
+    .forEach((u) => {
+      if (!u || !u.email) return;
+      const owned = new Set();
+      (u.assignedSegments || []).forEach((sid) => {
+        if (!claimed.has(sid)) {
+          claimed.add(sid);
+          owned.add(sid);
+        }
+      });
+      next.push({ name: u.name, email: u.email, segments: owned });
+    });
+  if (next.length === 0) return false;
+  rosterCache = next;
+  return true;
+}
+
+/**
+ * Best-effort refresh of the roster from the DB user table. No-op (keeps the
+ * current cache) when Mongo is unreachable or the query fails, so the dispatcher
+ * degrades gracefully to the last-known-good roster.
+ * @returns {Promise<boolean>} true if the cache was refreshed from the DB
+ */
+async function refreshRosterFromDB() {
+  if (!isDBConnected()) return false;
+  try {
+    const User = require("../models/User");
+    const jes = await User.find({ role: "je" }).select("name email assignedSegments");
+    return setRosterFromUsers(
+      (jes || []).map((u) => ({
+        name: u.name,
+        email: u.email,
+        assignedSegments: u.assignedSegments || [],
+      }))
+    );
+  } catch (err) {
+    // Keep the existing cache; never throw into the caller (boot / interval).
+    return false;
+  }
+}
+
+/**
+ * Find the roster worker who owns a segment id like "SEG-042". Resolves against
+ * the live cache first (explicit assignment), then falls back to the static
+ * ranges for ids outside any assignment (e.g. SEG-101+ on an extended corridor).
+ */
 function workerForSegment(segmentId) {
+  const direct = rosterCache.find((w) => w.segments.has(segmentId));
+  if (direct) return direct;
+
   const n = parseInt(String(segmentId).replace(/\D/g, ""), 10);
-  return WORKERS.find((w) => n >= w.fromSeg && n <= w.toSeg) || WORKERS[0];
+  const stat = STATIC_WORKERS.find((w) => n >= w.fromSeg && n <= w.toSeg);
+  if (stat) {
+    // Prefer the live cache entry with the same email (carries current name)
+    return rosterCache.find((w) => w.email === stat.email) || { name: stat.name, email: stat.email };
+  }
+  return rosterCache[0] || { name: STATIC_WORKERS[0].name, email: STATIC_WORKERS[0].email };
+}
+
+/**
+ * Is the segment inside the post-resolution auto-dispatch cooldown? Looks at the
+ * most recently completed work order for the segment; true while it is younger
+ * than AUTO_DISPATCH_COOLDOWN_MS. Pure — safe to call from the monitoring loop.
+ * @param {Array} workOrders - the global work order array
+ * @param {string} segmentId
+ * @param {number} [now] - epoch ms (injectable for tests)
+ * @returns {boolean}
+ */
+function isInDispatchCooldown(workOrders, segmentId, now = Date.now()) {
+  let latestCompletedAt = 0;
+  for (const wo of workOrders) {
+    if (wo.segmentId === segmentId && wo.status === "completed" && wo.completedAt) {
+      const t = new Date(wo.completedAt).getTime();
+      if (t > latestCompletedAt) latestCompletedAt = t;
+    }
+  }
+  return latestCompletedAt > 0 && now - latestCompletedAt < AUTO_DISPATCH_COOLDOWN_MS;
 }
 
 /**
@@ -350,10 +476,12 @@ function createWorkOrderRoutes(workOrders) {
     }
 
     // --- Resolve assigned worker ---------------------------------------------
+    // Resolve against the live roster cache so manual dispatch honours current
+    // (possibly admin-edited) crew membership, not a stale hardcoded list.
     let worker;
     if (assignedTo && typeof assignedTo === "string") {
       // Allow explicit assignment by email prefix (e.g. "je1", "je2", "je3")
-      const match = WORKERS.find(
+      const match = rosterCache.find(
         (w) => w.email.startsWith(assignedTo.toLowerCase()) || w.name === assignedTo
       );
       worker = match || workerForSegment(segmentId);
@@ -424,3 +552,10 @@ function createWorkOrderRoutes(workOrders) {
 
 module.exports = createWorkOrderRoutes;
 module.exports.assignWorkOrder = assignWorkOrder;
+// Roster sync (dynamic dispatch) + auto-dispatch cooldown — consumed by
+// server.js (boot/interval refresh + monitoring loop) and the test harness.
+module.exports.refreshRosterFromDB = refreshRosterFromDB;
+module.exports.setRosterFromUsers = setRosterFromUsers;
+module.exports.workerForSegment = workerForSegment;
+module.exports.isInDispatchCooldown = isInDispatchCooldown;
+module.exports.AUTO_DISPATCH_COOLDOWN_MS = AUTO_DISPATCH_COOLDOWN_MS;

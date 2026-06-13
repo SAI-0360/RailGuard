@@ -141,7 +141,7 @@ function IncidentRow({ segment, workOrderId, selected, onSelect, expanded = fals
       className={`relative w-full text-left rounded-lg border overflow-hidden cursor-pointer
         transition-[background-color,border-color,transform] duration-150 ease-swift active:scale-[0.99]
         ${selected
-          ? 'border-accent/60 bg-surface-3'
+          ? 'border-accent bg-surface-3 ring-2 ring-accent/40'
           : isCrit
             ? 'border-crit/25 bg-crit/[0.06] hover:bg-crit/10'
             : 'border-line bg-surface-2 hover:bg-surface-3'

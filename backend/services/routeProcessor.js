@@ -69,21 +69,46 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Radius of the circumcircle through 3 points, on a local planar projection.
- * R = (a·b·c) / (4·Area). Collinear points (zero area) → straight → 0.
- * @returns {number} radius in meters, or 0 for straight track
+ * Radius of the circumcircle through a segment's 3 sample points (start, mid,
+ * end) — the standard proxy for how sharply the track curves. A tighter curve
+ * has a smaller circumradius, which the risk engine turns into a higher penalty.
+ *
+ * METHOD:
+ *  1. Project the three geographic points to a local planar frame (km) with an
+ *     equirectangular projection anchored at p1 (longitude scaled by cos(lat) so
+ *     east–west distances aren't overstated). Over a ~1 km window this is exact
+ *     enough that great-circle error is negligible.
+ *  2. Triangle area via the cross-product (shoelace) determinant, which gives
+ *     TWICE the area directly and avoids the catastrophic cancellation that the
+ *     classical three-side Heron's formula suffers on near-collinear points:
+ *         2·Area = |(B−A) × (C−A)| = |(bx−ax)(cy−ay) − (cx−ax)(by−ay)|
+ *  3. Circumradius from the law of sines, R = (a·b·c) / (4·Area), where a, b, c
+ *     are the side lengths. With 2·Area in hand: R = a·b·c / (2 · 2·Area). The
+ *     ×1000 converts km → meters.
+ *
+ * Collinear points yield ~0 area (straight track) → return 0 (no curve penalty);
+ * very gentle curves with R beyond STRAIGHT_RADIUS_MAX_M are also treated as
+ * straight to avoid noise on effectively-tangent track.
+ *
+ * @param {{lat:number,lon:number}} p1 - segment start
+ * @param {{lat:number,lon:number}} p2 - segment midpoint
+ * @param {{lat:number,lon:number}} p3 - segment end
+ * @param {number} cosLat - cos(meanLatitude), the longitude scale factor
+ * @returns {number} circumradius in meters, or 0 for straight track
  */
 function circumradiusMeters(p1, p2, p3, cosLat) {
-  // Local equirectangular projection (km) — exact enough over a 1 km window
+  // (1) Local equirectangular projection (km), origin at p1 → A=(0,0).
   const ax = 0, ay = 0;
   const bx = (p2.lon - p1.lon) * cosLat * KM_PER_DEG_LON_EQ;
   const by = (p2.lat - p1.lat) * KM_PER_DEG_LAT;
   const cx = (p3.lon - p1.lon) * cosLat * KM_PER_DEG_LON_EQ;
   const cy = (p3.lat - p1.lat) * KM_PER_DEG_LAT;
 
+  // (2) 2·Area via the cross-product determinant of edges AB and AC.
   const area2 = Math.abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)); // 2·Area
   if (area2 < 1e-9) return 0; // collinear → straight
 
+  // (3) Side lengths a=|BC|, b=|CA|, c=|AB|, then R = abc / (4·Area) = abc / (2·area2).
   const a = Math.hypot(cx - bx, cy - by);
   const b = Math.hypot(cx - ax, cy - ay);
   const c = Math.hypot(bx - ax, by - ay);

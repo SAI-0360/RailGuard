@@ -342,7 +342,10 @@ function DeadlineMeter({ createdAt, deadline, now, acknowledged, done, awaiting,
         <div className="h-[3px] flex-1 rounded-full overflow-hidden bg-surface-2">
           <div className="h-full bg-ink-3/40" style={{ width: `${fr * 100}%` }} />
         </div>
-        <span className="font-mono text-[10px] whitespace-nowrap text-ink-3">SLA paused · awaiting guidance</span>
+        <span className="inline-flex items-center gap-1 font-mono text-[10px] whitespace-nowrap
+          px-1.5 py-0.5 rounded border border-accent/30 bg-accent/10 text-accent">
+          <span aria-hidden="true">❄</span> SLA FROZEN
+        </span>
       </div>
     );
   }
