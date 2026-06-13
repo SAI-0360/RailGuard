@@ -7,8 +7,8 @@ import { isAdminRole, roleLabel } from '../utils/roles';
  * Replaces the old header + MetricCards: 97 healthy segments cost one number, not four cards.
  */
 export default function SituationBar({ stats, monitoring, user, onLogout }) {
-  const { total = 100, healthy = 0, warning = 0, critical = 0 } = stats || {};
-  const healthIndex = total > 0 ? ((healthy / total) * 100).toFixed(1) : '0.0';
+  const { total = 100, healthy = 0, warning = 0, critical = 0, chi } = stats || {};
+  const healthIndex = chi !== undefined ? Number(chi).toFixed(1) : (total > 0 ? ((healthy / total) * 100).toFixed(1) : '0.0');
 
   return (
     <header className="sticky top-0 z-40 bg-bg border-b border-line">
@@ -22,7 +22,7 @@ export default function SituationBar({ stats, monitoring, user, onLogout }) {
         {/* Network truth — mono, scannable as a single line of instruments */}
         <div className="hidden md:flex items-center gap-5 font-mono text-xs">
           <span className="text-ink-3">
-            HEALTH <span className="text-ink font-medium">{healthIndex}</span>
+            HEALTH <span className="text-ink font-medium">{healthIndex}%</span>
           </span>
           <span className={critical > 0 ? 'text-crit font-medium' : 'text-ink-3'}>
             {critical} CRIT

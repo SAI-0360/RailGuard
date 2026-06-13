@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { analyseSegment, createManualWorkOrder } from '../services/api';
 import VibrationChart from './VibrationChart';
 import DefectList from './DefectList';
 import AiExplanation from './AiExplanation';
@@ -17,14 +18,65 @@ import { getStatusColors } from '../utils/statusColors';
  * Vital strip, linear risk meter with threshold ticks, telemetry chart,
  * honest risk decomposition (real model weights), AI analysis, defects, actions.
  */
-export default function FocusPanel({ segment, loading, canAct = true, canVerify = false, onClose, onDefectExtracted, onRepairVerified, verifyPrefill = null }) {
+export default function FocusPanel({ segment, loading, canAct = true, canVerify = false, onClose, onDefectExtracted, onRepairVerified, verifyPrefill = null, escalatedWorkOrder = null, onInstruct, onEscalateDen, workOrders = [], userRole = '', onProactiveDispatched }) {
   const reduceMotion = useReducedMotion();
   const [aiExplanation, setAiExplanation] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisNonce, setAnalysisNonce] = useState(0);
   const [tab, setTab] = useState('overview');
+  // Cache AI analysis per segmentId so the 5s segment poll and re-renders don't
+  // re-call Gemini. Invalidated (via analysisNonce) when a defect is extracted.
+  const analysisCache = useRef({});
 
+  const segmentId = segment?.segmentId;
+  const status = segment?.status;
+
+  // Proactive dispatch eligibility — must be above early returns (rules of hooks).
+  // (A) user is SSE, (B) segment status is 'warning', (C) no active pending work orders
+  const hasActiveWorkOrder = useMemo(
+    () => workOrders.some((wo) => wo.segmentId === segmentId && wo.status === 'pending'),
+    [workOrders, segmentId]
+  );
+  const showProactiveDispatch = (userRole === 'sse' || userRole === 'admin') && status === 'warning' && !hasActiveWorkOrder;
+
+  // Auto-analyse a degraded segment when it enters focus. Healthy track needs
+  // no narration; cached segments display instantly without another API call.
   useEffect(() => {
-    if (segment) setAiExplanation(segment.riskExplanation || null);
-  }, [segment?.segmentId, segment?.riskExplanation]);
+    if (!segmentId) {
+      setAiExplanation(null);
+      return undefined;
+    }
+    if (analysisCache.current[segmentId] !== undefined) {
+      setAiExplanation(analysisCache.current[segmentId]);
+      setAnalysisLoading(false);
+      return undefined;
+    }
+    if (status === 'healthy') {
+      setAiExplanation(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setAnalysisLoading(true);
+    setAiExplanation(null);
+    analyseSegment(segmentId)
+      .then((data) => {
+        if (cancelled) return;
+        const text = data?.explanation || null;
+        analysisCache.current[segmentId] = text;
+        setAiExplanation(text);
+      })
+      .catch(() => {
+        if (!cancelled) setAiExplanation(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAnalysisLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [segmentId, status, analysisNonce]);
 
   // A new segment in focus always opens on Overview
   useEffect(() => {
@@ -52,15 +104,20 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
     );
   }
 
+  // segmentId + status are declared above (drive the analysis effect)
   const {
-    segmentId, status, riskScore = 0, vibrationLevel, crackCount = 0,
+    riskScore = 0, vibrationLevel, crackCount = 0,
     incidentCount = 0, daysSinceInspection = 0, activeDefects = [],
     vibrationHistory = [], prediction = null, repairLog = [],
     radiusOfCurvature,
   } = segment;
 
+
   const handleExtracted = (response) => {
-    if (response?.explanation) setAiExplanation(response.explanation);
+    // A new defect changes the risk picture — drop the cached analysis and
+    // force a re-analysis so the summary reflects the freshly logged defect.
+    if (segmentId) delete analysisCache.current[segmentId];
+    setAnalysisNonce((n) => n + 1);
     if (onDefectExtracted) onDefectExtracted(response);
   };
 
@@ -93,6 +150,16 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
         </div>
 
         <div className="p-4 space-y-5">
+          {/* Escalation: a JE on this segment is blocked and needs the SSE's
+              guidance. Surfaced first — it's the most time-sensitive thing here. */}
+          {canVerify && escalatedWorkOrder && (
+            <EscalationResponse
+              workOrder={escalatedWorkOrder}
+              onInstruct={onInstruct}
+              onEscalateDen={onEscalateDen}
+            />
+          )}
+
           {/* Vital strip: the "is this getting worse right now" answer */}
           <div>
             <div className="flex items-baseline gap-3">
@@ -166,9 +233,19 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
                 radiusOfCurvature={radiusOfCurvature}
               />
 
-              <AiExplanation explanation={aiExplanation} />
+              <AiExplanation explanation={aiExplanation} loading={analysisLoading} />
 
               <DefectList defects={activeDefects} segmentId={segmentId} />
+
+              {/* Proactive Dispatch — SSE manually assigns a crew to a warning
+                  segment before autonomous escalation kicks in. Only rendered when
+                  all three conditions are met (SSE + warning + no active WO). */}
+              {showProactiveDispatch && (
+                <ProactiveDispatch
+                  segmentId={segmentId}
+                  onDispatched={onProactiveDispatched}
+                />
+              )}
 
               {/* Action rail (backend enforces): inspection logging is senior
                   staff (DEN/SSE); repair verification is the SSE's sign-off. */}
@@ -206,6 +283,186 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
         </div>
       </motion.section>
     </AnimatePresence>
+  );
+}
+
+/**
+ * EscalationResponse — the SSE's seat in the three-tier hierarchy. Shows the
+ * JE's note and lets the SSE either (a) instruct the JE directly, or (b) escalate
+ * up to the DEN when they can't resolve it themselves. When the DEN replies, the
+ * directive appears here and pre-fills the JE instruction for one-tap relay.
+ * Deterministic, no AI.
+ */
+function EscalationResponse({ workOrder, onInstruct, onEscalateDen }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Tier 2 — escalate up to the DEN
+  const [showDen, setShowDen] = useState(false);
+  const [denNote, setDenNote] = useState('');
+  const [denBusy, setDenBusy] = useState(false);
+  const [denError, setDenError] = useState(null);
+
+  const denStatus = workOrder.denEscalationStatus || null;
+
+  // When the DEN's directive lands, pre-fill the JE instruction so the SSE can
+  // relay it in one tap — but never clobber what the SSE has already typed.
+  useEffect(() => {
+    if (denStatus === 'resolved' && workOrder.denInstruction && !text) {
+      setText(workOrder.denInstruction);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [denStatus, workOrder.denInstruction]);
+
+  const submit = async () => {
+    const instruction = text.trim();
+    if (!instruction || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onInstruct(workOrder.workOrderId, instruction);
+      setText('');
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not send instruction');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitDen = async () => {
+    const note = denNote.trim();
+    if (!note || denBusy || !onEscalateDen) return;
+    setDenBusy(true);
+    setDenError(null);
+    try {
+      await onEscalateDen(workOrder.workOrderId, note);
+      setDenNote('');
+      setShowDen(false);
+    } catch (err) {
+      setDenError(err?.response?.data?.error || 'Could not escalate to DEN');
+    } finally {
+      setDenBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-warn/40 bg-warn/[0.07] px-4 py-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="chip bg-warn/15 text-warn border border-warn/40">⚠️ AWAITING GUIDANCE</span>
+        <span className="font-mono text-[11px] text-ink-3 truncate">
+          {workOrder.workOrderId} · {workOrder.assignedWorker}
+        </span>
+      </div>
+
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-wide text-ink-3 mb-1">JE note</p>
+        <p className="text-xs text-ink-2 leading-relaxed whitespace-pre-wrap rounded-lg border border-line bg-surface-2 px-3 py-2">
+          {workOrder.jeNote || '(no note provided)'}
+        </p>
+      </div>
+
+      {/* DEN directive received — relay it to the JE */}
+      {denStatus === 'resolved' && workOrder.denInstruction && (
+        <div className="rounded-lg border border-accent/30 bg-accent/[0.07] px-3 py-2.5">
+          <p className="font-mono text-[10px] uppercase tracking-wide text-accent mb-1">
+            DEN Directive — relay to the JE
+          </p>
+          <p className="text-xs text-ink-2 leading-relaxed whitespace-pre-wrap">
+            {workOrder.denInstruction}
+          </p>
+        </div>
+      )}
+
+      {/* Escalated up — waiting on the Division Engineer */}
+      {denStatus === 'requested' && (
+        <div className="rounded-lg border border-warn/30 bg-warn/[0.08] px-3 py-2.5 text-center">
+          <p className="text-sm font-medium text-warn">⏳ Awaiting DEN directive…</p>
+          {workOrder.sseNote && (
+            <p className="text-[11px] text-ink-3 mt-1">Your note to DEN: “{workOrder.sseNote}”</p>
+          )}
+        </div>
+      )}
+
+      <div>
+        <label htmlFor="sse-instruction" className="block text-[11px] text-ink-2 mb-1">
+          Send Instruction to JE
+        </label>
+        <textarea
+          id="sse-instruction"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={3}
+          placeholder="Diagnose and direct: e.g. That's a thermite weld failure — apply a joggled fishplate as a temporary measure, restrict to 30 km/h, and schedule a re-weld."
+          className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2.5 text-xs text-ink
+            placeholder-ink-3 resize-none focus:outline-none focus:border-warn/60 transition-colors duration-150"
+        />
+      </div>
+
+      {error && (
+        <p className="px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit">{error}</p>
+      )}
+
+      <button
+        onClick={submit}
+        disabled={busy || !text.trim()}
+        className="btn-accent w-full px-4 py-2"
+      >
+        {busy ? 'Sending…' : 'Send instruction →'}
+      </button>
+
+      {/* Tier 2 — escalate up to the DEN, only if not already escalated */}
+      {onEscalateDen && denStatus === null && (
+        showDen ? (
+          <div className="space-y-2 border-t border-warn/20 pt-3">
+            <label htmlFor="sse-den-note" className="block text-[11px] text-ink-2">
+              Escalate to DEN — what do you need a call on?
+            </label>
+            <textarea
+              id="sse-den-note"
+              value={denNote}
+              onChange={(e) => setDenNote(e.target.value)}
+              rows={2}
+              autoFocus
+              placeholder="e.g. Recurring weld failures across this corridor — need a division-level call on a speed cap and a re-weld programme."
+              className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2.5 text-xs text-ink
+                placeholder-ink-3 resize-none focus:outline-none focus:border-warn/60 transition-colors duration-150"
+            />
+            {denError && (
+              <p className="px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit">{denError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={submitDen}
+                disabled={denBusy || !denNote.trim()}
+                className="flex-1 px-4 py-2 rounded-lg text-sm font-medium border border-warn/30
+                  bg-warn/10 text-warn hover:bg-warn/15 disabled:opacity-50 transition-colors
+                  duration-150 cursor-pointer"
+              >
+                {denBusy ? 'Escalating…' : 'Send to DEN →'}
+              </button>
+              <button
+                onClick={() => setShowDen(false)}
+                disabled={denBusy}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-line
+                  bg-surface-2 text-ink-2 hover:bg-surface-3 hover:text-ink transition-colors
+                  duration-150 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowDen(true)}
+            className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-warn/30
+              bg-warn/5 text-warn hover:bg-warn/10 transition-colors duration-150 cursor-pointer"
+          >
+            Escalate to DEN →
+          </button>
+        )
+      )}
+    </div>
   );
 }
 
@@ -478,6 +735,144 @@ function RiskFactors({ vibrationLevel = 0, crackCount = 0, incidentCount = 0, da
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * ProactiveDispatch — the SSE's preemptive crew-assignment form for warning
+ * segments. Lets the SSE act before the autonomous monitor escalates. Dark
+ * glassmorphic card with amber/orange accents to signal warning mitigation.
+ *
+ * Props:
+ *   segmentId          — the segment to dispatch against
+ *   onDispatched       — callback after successful dispatch (triggers parent refresh)
+ */
+const FIELD_CREWS = [
+  { value: 'je1', label: 'JE Track Worker 1 (JE1)' },
+  { value: 'je2', label: 'JE Track Worker 2 (JE2)' },
+  { value: 'je3', label: 'JE Track Worker 3 (JE3)' },
+];
+
+function ProactiveDispatch({ segmentId, onDispatched }) {
+  const [assignedTo, setAssignedTo] = useState(FIELD_CREWS[0].value);
+  const [directives, setDirectives] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  // Reset state when the segment changes
+  useEffect(() => {
+    setDirectives('');
+    setErrorMessage(null);
+    setIsSuccess(false);
+    setAssignedTo(FIELD_CREWS[0].value);
+  }, [segmentId]);
+
+  const handleSubmit = async () => {
+    const instruction = directives.trim();
+    if (!instruction || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setIsSuccess(false);
+
+    try {
+      await createManualWorkOrder(segmentId, instruction, assignedTo);
+      setIsSuccess(true);
+      setDirectives('');
+      if (onDispatched) onDispatched();
+    } catch (err) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.error;
+      if (status === 409) {
+        setErrorMessage(msg || 'A work order already exists for this segment.');
+      } else {
+        setErrorMessage(msg || 'Failed to create work order. Please try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isSuccess) {
+    return (
+      <div className="rounded-lg border border-accent/30 bg-accent/[0.07] px-4 py-3 space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="text-accent text-sm">✓</span>
+          <span className="text-sm font-medium text-accent">Crew dispatched</span>
+        </div>
+        <p className="text-[11px] text-ink-3">
+          Work order created for {segmentId}. The assigned JE will see it in their field queue.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-warn/30 bg-surface-2/40 backdrop-blur-sm px-4 py-3.5 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-warn text-sm">⚡</span>
+        <h4 className="font-mono text-[11px] uppercase tracking-wide font-medium text-warn">
+          Proactive Dispatch
+        </h4>
+        <span className="ml-auto font-mono text-[10px] text-ink-3">{segmentId}</span>
+      </div>
+
+      {/* Field Crew select */}
+      <div>
+        <label htmlFor="proactive-crew" className="block text-[11px] text-ink-2 mb-1">
+          Assign Field Crew
+        </label>
+        <select
+          id="proactive-crew"
+          value={assignedTo}
+          onChange={(e) => setAssignedTo(e.target.value)}
+          disabled={isSubmitting}
+          className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2 text-xs text-ink
+            focus:outline-none focus:border-warn/60 transition-colors duration-150
+            appearance-none cursor-pointer"
+        >
+          {FIELD_CREWS.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* SSE Directives textarea */}
+      <div>
+        <label htmlFor="proactive-directives" className="block text-[11px] text-ink-2 mb-1">
+          SSE Directives
+        </label>
+        <textarea
+          id="proactive-directives"
+          value={directives}
+          onChange={(e) => setDirectives(e.target.value)}
+          rows={3}
+          disabled={isSubmitting}
+          placeholder="e.g. Vibration trending upward on approach curve — inspect rail joints, check for loosened fastenings, and report back before next block window."
+          className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2.5 text-xs text-ink
+            placeholder-ink-3 resize-none focus:outline-none focus:border-warn/60 transition-colors duration-150"
+        />
+      </div>
+
+      {/* Error display */}
+      {errorMessage && (
+        <p className="px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit">
+          {errorMessage}
+        </p>
+      )}
+
+      {/* Submit button — amber/orange accent for warning mitigation */}
+      <button
+        onClick={handleSubmit}
+        disabled={isSubmitting || !directives.trim()}
+        className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-warn/40
+          bg-warn/15 text-warn hover:bg-warn/25 disabled:opacity-40
+          transition-colors duration-150 cursor-pointer"
+      >
+        {isSubmitting ? 'Dispatching…' : 'Dispatch crew →'}
+      </button>
     </div>
   );
 }

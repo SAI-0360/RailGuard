@@ -27,6 +27,10 @@ export default function RouteFilter({ routeQuery, routeInfo, onRouteChange }) {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [loadError, setLoadError] = useState(null);
+  // Collapsed by default: route scoping is an occasional instrument, and this
+  // panel sits at the top of the primary column — the header chip alone says
+  // whether a scope is active. Same toggle pattern as TrackStrip / DrillPanel.
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,21 +68,28 @@ export default function RouteFilter({ routeQuery, routeInfo, onRouteChange }) {
 
   return (
     <section className="panel">
-      <div className="flex items-center gap-2 px-4 py-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 py-3 cursor-pointer"
+      >
         <h2 className="panel-title">Route scope</h2>
         {active ? (
           <span className="chip bg-accent/10 text-accent">filtered</span>
         ) : (
           <span className="chip bg-surface-3 text-ink-3">full network</span>
         )}
-        {routeInfo && (
-          <span className="ml-auto font-mono text-[10px] text-ink-3">
-            {routeInfo.coveredKm} km · {routeInfo.segmentCount} segments
-            {routeInfo.truncated ? ` · first 100 km of ${routeInfo.totalRouteKm}` : ''}
-          </span>
-        )}
-      </div>
+        <span className="ml-auto font-mono text-[10px] text-ink-3">
+          {routeInfo
+            ? `${routeInfo.coveredKm} km · ${routeInfo.segmentCount} segments${
+                routeInfo.truncated ? ` · first 100 km of ${routeInfo.totalRouteKm}` : ''
+              } · `
+            : ''}
+          {open ? 'hide' : 'change'}
+        </span>
+      </button>
 
+      {open && (
       <div className="px-4 pb-4">
         {loadError ? (
           <p className="px-3 py-2 rounded-lg bg-surface-2 border border-line text-[11px] text-ink-3">
@@ -158,6 +169,7 @@ export default function RouteFilter({ routeQuery, routeInfo, onRouteChange }) {
           </p>
         )}
       </div>
+      )}
     </section>
   );
 }

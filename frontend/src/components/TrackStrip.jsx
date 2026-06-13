@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 /**
  * TrackStrip — the 100 segments as a linear schematic, demoted to a

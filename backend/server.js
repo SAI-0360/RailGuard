@@ -1,11 +1,14 @@
+require("dotenv").config();
+console.log("GEMINI KEY LOADED:", !!process.env.GEMINI_API_KEY);
+
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
 
 const segments = require("./data/segments");
 const { calculateRisk, predictTimeToCritical } = require("./services/riskEngine");
 const { logActivity } = require("./services/activityLogger");
-const { MAX_VIBRATION_HISTORY, MONITORING_INTERVAL_MS } = require("./utils/constants");
+const { pingGemini } = require("./services/geminiPing");
+const { MAX_VIBRATION_HISTORY, MONITORING_INTERVAL_MS, GEMINI_MODEL } = require("./utils/constants");
 
 const { connectDB } = require("./config/db");
 const seedUsers = require("./utils/seedUsers");
@@ -14,6 +17,7 @@ const authRoutes = require("./routes/authRoutes");
 const segmentRoutes = require("./routes/segmentRoutes");
 const createAiRoutes = require("./routes/aiRoutes");
 const statsRoutes = require("./routes/statsRoutes");
+const configRoutes = require("./routes/configRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
 const createMonitoringRoutes = require("./routes/monitoringRoutes");
 const createWorkOrderRoutes = require("./routes/workOrderRoutes");
@@ -35,7 +39,7 @@ let workOrderCounter = 0;
 // ---------------------------------------------------------------------------
 function runMonitoringCycle() {
   cycleCount++;
-  logActivity("MONITOR", "SCAN", `Cycle #${cycleCount}: Scanning 100 segments...`, "info");
+  logActivity("MONITOR", "SCAN", `Cycle #${cycleCount}: Scanning ${segments.length} segments...`, "info");
 
   let healthyCount = 0;
   let warningCount = 0;
@@ -167,6 +171,7 @@ connectDB().then((connected) => {
 
 // Route mounts
 app.use("/api/auth", authRoutes);
+app.use("/api/config", configRoutes);
 app.use("/api", segmentRoutes);
 app.use("/api", createAiRoutes(workOrders));
 app.use("/api", statsRoutes);
@@ -183,4 +188,10 @@ startMonitoring();
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`RailGuard backend running on 0.0.0.0:${PORT}`);
+
+  // Startup Gemini check — informational only; a failure must never crash the
+  // server (CONTEXT.md: fallbacks are mandatory, the app never crashes).
+  pingGemini()
+    .then((text) => console.log(`✅ Gemini API connected (${GEMINI_MODEL} → "${text}")`))
+    .catch((err) => console.log(`⚠️ Gemini API unavailable — running in fallback mode (${err.message})`));
 });

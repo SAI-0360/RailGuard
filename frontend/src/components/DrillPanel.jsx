@@ -1,10 +1,7 @@
-import React, { useState } from 'react';
-import { simulateAction, resetAll, triggerScenario } from '../services/api';
-import { TOTAL_SEGMENTS, SEGMENT_ID_PREFIX, DEFAULT_SPIKE_VALUE } from '../utils/constants';
+import { useState, useEffect } from 'react';
+import { simulateAction, resetAll, triggerScenario, getMockAiStatus, toggleMockAi } from '../services/api';
+import { SEGMENT_ID_PREFIX, DEFAULT_SPIKE_VALUE } from '../utils/constants';
 
-const segmentOptions = Array.from({ length: TOTAL_SEGMENTS }, (_, i) =>
-  `${SEGMENT_ID_PREFIX}${String(i + 1).padStart(3, '0')}`
-);
 
 const SELECT_ARROW = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236A7383' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`;
 
@@ -14,12 +11,45 @@ const SELECT_ARROW = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
  * collapsed by default. In a real ops room, confusing drill controls with
  * live state is dangerous; the visual treatment encodes that boundary.
  */
-export default function DrillPanel({ onActionComplete }) {
+export default function DrillPanel({ segments = [], onActionComplete }) {
   const [open, setOpen] = useState(false);
   const [targetId, setTargetId] = useState('SEG-042');
   const [loadingAction, setLoadingAction] = useState(null);
   const [lastResult, setLastResult] = useState(null);
   const [scenario, setScenario] = useState('critical_degrade');
+  const [useMock, setUseMock] = useState(true);
+  const [loadingToggle, setLoadingToggle] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getMockAiStatus()
+      .then((data) => {
+        if (active) setUseMock(data.useMock);
+      })
+      .catch((err) => {
+        console.error('Failed to load Mock AI configuration status:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleToggleMock = async () => {
+    setLoadingToggle(true);
+    const nextVal = !useMock;
+    try {
+      const data = await toggleMockAi(nextVal);
+      setUseMock(data.useMock);
+    } catch (err) {
+      console.error('Failed to toggle Mock AI state:', err);
+    } finally {
+      setLoadingToggle(false);
+    }
+  };
+
+  const segmentOptions = segments.length > 0
+    ? segments.map((s) => s.segmentId)
+    : Array.from({ length: 100 }, (_, i) => `${SEGMENT_ID_PREFIX}${String(i + 1).padStart(3, '0')}`);
 
   const handleAction = async (actionName, action, value) => {
     setLoadingAction(actionName);
@@ -89,6 +119,28 @@ export default function DrillPanel({ onActionComplete }) {
             Inject synthetic faults to test operator response and agent behavior.
             Nothing here reflects real track state.
           </p>
+
+          {/* AI Mode Toggle Switch */}
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-2/40 border border-line">
+            <span className="text-[11px] font-medium text-ink-2">
+              {useMock ? 'AI Mode: Simulated' : 'AI Mode: Live Gemini'}
+            </span>
+            <button
+              onClick={handleToggleMock}
+              disabled={loadingToggle || busy}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                useMock ? 'bg-accent' : 'bg-surface-3'
+              }`}
+              title="Toggle between mock and live Gemini API responses"
+              aria-label="Toggle Mock AI mode"
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  useMock ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
 
           {/* Target segment */}
           <div>
@@ -172,7 +224,7 @@ export default function DrillPanel({ onActionComplete }) {
             disabled={busy}
             className="btn-crit w-full px-3 py-2"
           >
-            {loadingAction === 'resetAll' ? 'Resetting all segments' : 'Reset all 100 segments'}
+            {loadingAction === 'resetAll' ? 'Resetting all segments' : `Reset all ${segments.length || 100} segments`}
           </button>
 
           {/* Result feedback */}

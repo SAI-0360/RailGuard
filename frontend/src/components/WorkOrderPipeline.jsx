@@ -7,6 +7,7 @@ const WORKER_STATUS_META = {
   unacknowledged: { label: 'unacknowledged', chip: 'chip bg-surface-3 text-ink-3' },
   acknowledged: { label: 'acknowledged', chip: 'chip bg-accent/10 text-accent' },
   in_progress: { label: 'in progress', chip: 'chip bg-accent/10 text-accent' },
+  awaiting_guidance: { label: 'awaiting guidance', chip: 'chip bg-warn/10 text-warn' },
   done: { label: 'done', chip: 'chip bg-ok/10 text-ok' },
 };
 
@@ -60,6 +61,14 @@ export default function WorkOrderPipeline({ workOrders = [], onSelectSegment, on
   const pending = workOrders.filter((wo) => wo.status === 'pending');
   const completed = workOrders.filter((wo) => wo.status === 'completed');
 
+  const activeCount = pending.filter((wo) =>
+    ['unacknowledged', 'acknowledged', 'awaiting_guidance', 'in_progress'].includes(
+      wo.workerStatus || 'unacknowledged'
+    )
+  ).length;
+
+  const verifyCount = pending.filter((wo) => wo.workerStatus === 'done').length;
+
   const now = useNowTicker(pending.some((wo) => wo.deadline));
 
   const handleCardClick = (order) => {
@@ -71,8 +80,13 @@ export default function WorkOrderPipeline({ workOrders = [], onSelectSegment, on
     <section className="panel">
       <div className="flex items-center justify-between px-4 py-3 border-b border-line">
         <h2 className="panel-title">Work orders</h2>
-        {pending.length > 0 && (
-          <span className="font-mono text-[11px] text-warn">{pending.length} pending</span>
+        {(activeCount > 0 || verifyCount > 0) && (
+          <div className="font-mono text-[11px] flex items-center gap-1">
+            <span className="text-orange-400">{activeCount} active</span>
+            {verifyCount > 0 && (
+              <span className="text-emerald-400"> · {verifyCount} awaiting verification</span>
+            )}
+          </div>
         )}
       </div>
 
@@ -160,11 +174,20 @@ function WorkOrderRow({
               → {order.assignedWorker}
             </span>
           )}
-          <span className={`ml-auto ${isUrgent ? 'chip-crit' : 'chip-warn'}`}>
+          {/* Escalation: the JE is blocked and needs the SSE's guidance now */}
+          {order.escalationStatus === 'requested' && (
+            <span className="ml-auto chip bg-warn/15 text-warn border border-warn/40 whitespace-nowrap">
+              ⚠️ AWAITING GUIDANCE
+            </span>
+          )}
+          <span className={`${order.escalationStatus === 'requested' ? '' : 'ml-auto'} ${isUrgent ? 'chip-crit' : 'chip-warn'}`}>
             {order.priority || 'high'}
           </span>
-          {/* Worker status indicator: unacknowledged → acknowledged → in progress → done */}
-          <span className={statusMeta.chip}>{statusMeta.label}</span>
+          {/* Worker status indicator: unacknowledged → acknowledged → in progress → done.
+              Suppressed while awaiting guidance — the prominent chip above says it. */}
+          {order.escalationStatus !== 'requested' && (
+            <span className={statusMeta.chip}>{statusMeta.label}</span>
+          )}
         </div>
 
         {order.reason && (
@@ -178,6 +201,8 @@ function WorkOrderRow({
             now={now}
             acknowledged={acknowledged}
             done={workerStatus === 'done'}
+            awaiting={order.escalationStatus === 'requested'}
+            escalationRequestedAt={order.escalationRequestedAt}
           />
         )}
 
@@ -297,21 +322,35 @@ function SnapshotCell({ label, value, unit, alert = false }) {
  * unacknowledged — once a worker responds, the timer keeps counting in
  * neutral ink. The label always names the state, never color alone.
  */
-function DeadlineMeter({ createdAt, deadline, now, acknowledged, done }) {
+function DeadlineMeter({ createdAt, deadline, now, acknowledged, done, awaiting, escalationRequestedAt }) {
   const deadlineMs = new Date(deadline).getTime();
   const createdMs = new Date(createdAt).getTime();
   const totalMs = Math.max(deadlineMs - createdMs, 1);
-  const remainingMs = deadlineMs - now;
-
-  const overdue = remainingMs <= 0;
-  const closing = !overdue && remainingMs < HOUR_MS;
-  const frac = Math.min(Math.max(remainingMs / totalMs, 0), 1);
 
   if (done) {
     return (
       <p className="mt-1.5 font-mono text-[10px] text-ok">work reported done — awaiting verification</p>
     );
   }
+
+  // SLA paused while the JE waits on SSE guidance — frozen, neutral.
+  if (awaiting) {
+    const frozen = escalationRequestedAt ? new Date(escalationRequestedAt).getTime() : now;
+    const fr = Math.min(Math.max((deadlineMs - frozen) / totalMs, 0), 1);
+    return (
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="h-[3px] flex-1 rounded-full overflow-hidden bg-surface-2">
+          <div className="h-full bg-ink-3/40" style={{ width: `${fr * 100}%` }} />
+        </div>
+        <span className="font-mono text-[10px] whitespace-nowrap text-ink-3">SLA paused · awaiting guidance</span>
+      </div>
+    );
+  }
+
+  const remainingMs = deadlineMs - now;
+  const overdue = remainingMs <= 0;
+  const closing = !overdue && remainingMs < HOUR_MS;
+  const frac = Math.min(Math.max(remainingMs / totalMs, 0), 1);
 
   let textClass = 'text-ink-2';
   let fillClass = 'bg-ink-3/40';

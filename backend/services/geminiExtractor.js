@@ -2,12 +2,16 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_MODEL, GEMINI_TIMEOUT_MS, GEMINI_RETRY_DELAY_MS } = require("../utils/constants");
 const { FALLBACK_EXTRACTION, FALLBACK_EXPLANATION, DEMO_FALLBACK_EXTRACTION, DEMO_FALLBACK_EXPLANATION } = require("../utils/fallbacks");
 const { logActivity } = require("./activityLogger");
+const { getUseMockAi } = require("../config/aiConfig");
 
-// Initialize Gemini client if API key is present
-const apiKey = process.env.GEMINI_API_KEY;
 let genAI = null;
-if (apiKey && apiKey !== "your_key_here") {
-  genAI = new GoogleGenerativeAI(apiKey);
+function getGenAI() {
+  if (genAI) return genAI;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (apiKey && apiKey !== "your_key_here") {
+    genAI = new GoogleGenerativeAI(apiKey);
+  }
+  return genAI;
 }
 
 /**
@@ -30,6 +34,7 @@ async function callGeminiWithRetry(model, prompt) {
       return await result.response.text();
     } catch (error) {
       lastError = error;
+      console.error(`Gemini call error on attempt ${attempt}:`, error.message, "| Status:", error.status || error.statusCode || "N/A");
       const transient = /429|503|timed out|fetch/i.test(error.message);
       if (attempt === 1 && transient) {
         console.warn(`Gemini call failed (attempt 1, transient): ${error.message}. Retrying in ${GEMINI_RETRY_DELAY_MS}ms...`);
@@ -49,15 +54,19 @@ function extractJsonFromText(rawText) {
   if (!rawText || typeof rawText !== "string") return null;
   const text = rawText.trim();
 
+  // gemini-2.5-flash sometimes returns the object inside a JSON array. Unwrap
+  // to the first object so the single-object validation downstream still works.
+  const unwrap = (v) => (Array.isArray(v) ? v.find((el) => el && typeof el === "object") || null : v);
+
   // Strategy 1: raw parse
-  try { return JSON.parse(text); } catch (_) {}
+  try { return unwrap(JSON.parse(text)); } catch (_) {}
 
   // Strategy 2: strip all code fence variants then parse
   const stripped = text
     .replace(/^```(?:json)?\s*\n?/m, "")
     .replace(/\n?\s*```\s*$/m, "")
     .trim();
-  try { return JSON.parse(stripped); } catch (_) {}
+  try { return unwrap(JSON.parse(stripped)); } catch (_) {}
 
   // Strategy 3: pull out the largest {...} block (handles prose before/after JSON)
   const match = text.match(/\{[\s\S]*\}/);
@@ -109,12 +118,25 @@ function cleanAndParseJson(rawText, fallback) {
  * @returns {Promise<Object>} The extracted defect details matching the schema.
  */
 async function extractDefect(reportText) {
+  if (getUseMockAi()) {
+    console.warn("⚠️ MOCK AI ENABLED: Bypassing Gemini API. No quota used.");
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return {
+      defectType: "Joint Bolt Loose",
+      location: "Joint at km 12.4",
+      severity: "medium",
+      description: "[MOCK AI] Loose bolts detected at the rail joint segment.",
+      recommendedAction: "Retighten all loose bolts and inspect joint integrity."
+    };
+  }
+
   // Demo-specific fallback when the demo segment (SEG-042) is involved
   const fallback = (reportText && typeof reportText === "string" && reportText.includes("SEG-042"))
     ? DEMO_FALLBACK_EXTRACTION
     : FALLBACK_EXTRACTION;
 
-  if (!genAI || !reportText || typeof reportText !== "string" || !reportText.trim()) {
+  const client = getGenAI();
+  if (!client || !reportText || typeof reportText !== "string" || !reportText.trim()) {
     console.warn("Gemini client not initialized or empty/invalid report text. Using fallback extraction.");
     logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
     return fallback;
@@ -123,7 +145,7 @@ async function extractDefect(reportText) {
   logActivity("EXTRACTION", "EXTRACT", `Processing inspection report for defect extraction (${reportText.length} chars)...`, "info");
 
   try {
-    const model = genAI.getGenerativeModel({
+    const model = client.getGenerativeModel({
       model: GEMINI_MODEL,
       generationConfig: { responseMimeType: "application/json" }
     });
@@ -158,7 +180,7 @@ ${reportText}`;
     }
     return result;
   } catch (error) {
-    console.error("Gemini extractDefect API call failed:", error.message);
+    console.error("Gemini extractDefect API call failed:", error.message, "| Status:", error.status || error.statusCode || "N/A");
     logActivity("EXTRACTION", "EXTRACT", "Gemini unavailable — using fallback extraction", "warning");
     return fallback;
   }
@@ -173,19 +195,26 @@ ${reportText}`;
  * @returns {Promise<string>} Gemini generated explanation.
  */
 async function generateRiskExplanation(segment, prediction = null, workOrder = null) {
+  if (getUseMockAi()) {
+    console.warn("⚠️ MOCK AI ENABLED: Bypassing Gemini API. No quota used.");
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return `[MOCK AI] Segment ${segment ? segment.segmentId : 'unknown'} exhibits stable telemetry, with current vibration at ${segment ? segment.vibrationLevel : '0.0'} mm/s. No active defects or historical incidents are contributing to elevated risk. Current conditions indicate standard operational status.`;
+  }
+
   // Demo-specific fallback when the demo segment (SEG-042) is involved
   const fallback = (segment && segment.segmentId === "SEG-042")
     ? DEMO_FALLBACK_EXPLANATION
     : FALLBACK_EXPLANATION;
 
-  if (!genAI || !segment) {
+  const client = getGenAI();
+  if (!client || !segment) {
     console.warn("Gemini client not initialized or segment missing. Using fallback explanation.");
     logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment ? segment.segmentId : "unknown segment"}`, "warning");
     return fallback;
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+    const model = client.getGenerativeModel({ model: GEMINI_MODEL });
 
     const trendLine = prediction
       ? `\nTrend: Vibration rising at ${prediction.slopePerReading} mm/s per reading. ${
@@ -231,7 +260,7 @@ RULES:
     );
     return explanation;
   } catch (error) {
-    console.error("Gemini generateRiskExplanation API call failed:", error.message);
+    console.error("Gemini generateRiskExplanation API call failed:", error.message, "| Status:", error.status || error.statusCode || "N/A");
     logActivity("EXTRACTION", "RISK_CALC", `Using fallback explanation for ${segment.segmentId}`, "warning");
     return fallback;
   }

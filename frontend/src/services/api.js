@@ -40,6 +40,10 @@ export const getChiHistory = () => client.get("/api/chi-history").then(r => r.da
 export const simulateAction = (id, action, value) =>
   client.post(`/api/segments/${id}/simulate`, { action, value }).then(r => r.data);
 
+// AI plain-English risk summary for one segment (Focus Panel auto-analysis)
+export const analyseSegment = (segmentId) =>
+  client.post("/api/analyse-segment", { segmentId }).then(r => r.data);
+
 export const extractDefect = (segmentId, reportText) =>
   client.post("/api/extract-defect", { segmentId, reportText }).then(r => r.data);
 
@@ -71,6 +75,29 @@ export const progressWorkOrder = (workOrderId, completionReport) =>
     .post(`/api/work-orders/${workOrderId}/progress`, completionReport ? { completionReport } : {})
     .then(r => r.data);
 
+// Structured escalation (human-to-human guidance loop, no AI):
+// JE asks for guidance; SSE replies with an instruction.
+export const escalateWorkOrder = (workOrderId, jeNote) =>
+  client.post(`/api/work-orders/${workOrderId}/escalate`, { jeNote }).then(r => r.data);
+
+export const instructWorkOrder = (workOrderId, sseInstruction) =>
+  client.post(`/api/work-orders/${workOrderId}/instruct`, { sseInstruction }).then(r => r.data);
+
+// Tier 2 — SSE escalates up to DEN; DEN issues a directive back to SSE.
+export const escalateDenWorkOrder = (workOrderId, sseNote) =>
+  client.post(`/api/work-orders/${workOrderId}/escalate-den`, { sseNote }).then(r => r.data);
+
+export const instructDenWorkOrder = (workOrderId, denInstruction) =>
+  client.post(`/api/work-orders/${workOrderId}/instruct-den`, { denInstruction }).then(r => r.data);
+
+// Proactive Dispatch — SSE manually assigns a crew to a warning segment
+export const createManualWorkOrder = (segmentId, sseInstruction, assignedTo) =>
+  client.post("/api/work-orders/manual", { segmentId, sseInstruction, assignedTo }).then(r => r.data);
+
 // Demo Scenarios
 export const triggerScenario = (scenario) =>
   client.post("/api/demo/scenario", { scenario }).then(r => r.data);
+
+// Dynamic Mock AI Configuration
+export const getMockAiStatus = () => client.get("/api/config/toggle-mock").then(r => r.data);
+export const toggleMockAi = (useMock) => client.post("/api/config/toggle-mock", { useMock }).then(r => r.data);

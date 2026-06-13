@@ -16,6 +16,7 @@ import useActivityLog from '../hooks/useActivityLog';
 import useMonitoring from '../hooks/useMonitoring';
 import useChiHistory from '../hooks/useChiHistory';
 import ActivityLedger from './ActivityLedger';
+import { instructDenWorkOrder } from '../services/api';
 import { roleLabel } from '../utils/roles';
 
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
@@ -23,24 +24,29 @@ const MONO = "'JetBrains Mono', ui-monospace, monospace";
 /**
  * DENCommandView — the Sr. DEN's division-wide HQ command terminal.
  *
- * Read-only by design: the District Engineer oversees, they do not operate.
- * No simulator, no focus panel, no work-order pipeline, no repair forms. The
- * screen answers three division questions at a glance — how healthy is the
- * corridor (CHI trend), what is breaching SLA right now (unresolved criticals),
- * and what is the autonomous agent doing (activity ledger). The only controls
- * are navigation (sign out); every other surface is observe-only.
+ * Mostly read-only: the District Engineer oversees, they do not operate. The
+ * one exception is the top of the escalation hierarchy — when an SSE escalates
+ * a problem up to the division, the DEN answers it here. No simulator, no focus
+ * panel, no work-order pipeline, no repair forms. The screen answers the
+ * division's questions at a glance — corridor health (CHI), SSE escalations
+ * awaiting a directive, SLA breaches, and what the agent is doing.
  */
 export default function DENCommandView() {
   const { user, logout } = useAuth();
   const { stats } = useStats();
-  const { workOrders } = useWorkOrders();
+  const { workOrders, refetch: refetchWorkOrders } = useWorkOrders();
   const { segments } = useSegments();
   const { logs } = useActivityLog();
   const monitoring = useMonitoring();
   const { history } = useChiHistory();
 
-  const { total = 100, healthy = 0, warning = 0, critical = 0 } = stats || {};
-  const chi = total > 0 ? ((healthy / total) * 100).toFixed(1) : '0.0';
+  const handleInstructDen = async (workOrderId, denInstruction) => {
+    await instructDenWorkOrder(workOrderId, denInstruction);
+    refetchWorkOrders();
+  };
+
+  const { total = 100, healthy = 0, warning = 0, critical = 0, chi: statsChi } = stats || {};
+  const chi = statsChi !== undefined ? Number(statsChi).toFixed(1) : (total > 0 ? ((healthy / total) * 100).toFixed(1) : '0.0');
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -57,6 +63,7 @@ export default function DENCommandView() {
       {/* Command center: wide single column of read-only instruments */}
       <main className="max-w-[1700px] mx-auto px-4 lg:px-8 py-6 space-y-6">
         <ChiTrendChart history={history} />
+        <EscalationList workOrders={workOrders} onInstructDen={handleInstructDen} />
         <SlaBreachList workOrders={workOrders} segments={segments} />
         <section>
           <h2 className="panel-title mb-2 px-1">Division Activity Log</h2>
@@ -149,12 +156,13 @@ function Clock() {
 /** CHI tooltip — instrument readout, not a floating card. */
 function ChiTooltip({ active, payload }) {
   if (!active || !payload || payload.length === 0) return null;
-  const data = payload[0].payload;
+  const data = payload[0]?.payload;
+  if (!data) return null;
   return (
     <div className="bg-surface-3 border border-line rounded-lg px-3 py-2 font-mono text-[11px]">
       <p className="text-ink-3 mb-1">{data.date}</p>
       <p className="text-ink">
-        CHI <span className="text-accent">{data.chi.toFixed(1)}%</span>
+        CHI <span className="text-accent">{Number(data.chi ?? 0).toFixed(1)}%</span>
       </p>
     </div>
   );
@@ -240,6 +248,118 @@ function formatOverdue(ms) {
   const m = Math.floor((abs % HOUR_MS) / 60000);
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+/**
+ * EscalationList — the top of the escalation hierarchy. The DEN sees ONLY what
+ * the SSE escalates up (sseNote), never the JE's original note, and answers with
+ * a directive. Sorted longest-waiting first. Deterministic, no AI.
+ */
+function EscalationList({ workOrders = [], onInstructDen }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const escalations = useMemo(() => {
+    return workOrders
+      .filter((wo) => wo.denEscalationStatus === 'requested')
+      .map((wo) => ({
+        wo,
+        waitedMs: wo.denEscalationRequestedAt ? now - new Date(wo.denEscalationRequestedAt).getTime() : 0,
+      }))
+      .sort((a, b) => b.waitedMs - a.waitedMs);
+  }, [workOrders, now]);
+
+  return (
+    <section className="panel">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+        <h2 className="panel-title">SSE Escalations — Awaiting Division Directive</h2>
+        <span className={`font-mono text-[11px] ${escalations.length > 0 ? 'text-warn' : 'text-ink-3'}`}>
+          {escalations.length} awaiting
+        </span>
+      </div>
+
+      {escalations.length === 0 ? (
+        <p className="px-4 py-10 text-center text-sm text-ink-2">
+          No escalations from the field.{' '}
+          <span className="text-ink-3">Section engineers are resolving issues at their tier.</span>
+        </p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {escalations.map(({ wo, waitedMs }) => (
+            <DenEscalationCard key={wo.workOrderId} wo={wo} waitedMs={waitedMs} onInstructDen={onInstructDen} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** One SSE escalation + the DEN's directive reply. */
+function DenEscalationCard({ wo, waitedMs, onInstructDen }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    const directive = text.trim();
+    if (!directive || busy || !onInstructDen) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onInstructDen(wo.workOrderId, directive);
+      setText('');
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not send directive');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="px-4 py-3 border-l-2 border-warn bg-warn/[0.04] space-y-2.5">
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-sm font-medium text-ink">{wo.segmentId}</span>
+        <span className="chip bg-warn/10 text-warn">escalated by SSE</span>
+        <span className="font-mono text-[11px] text-ink-3 truncate">{wo.workOrderId}</span>
+        <span className="ml-auto text-right shrink-0">
+          <span className="font-mono text-xs text-warn">{formatOverdue(waitedMs)}</span>
+        </span>
+      </div>
+
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-wide text-ink-3 mb-1">SSE escalation</p>
+        <p className="text-xs text-ink-2 leading-relaxed whitespace-pre-wrap rounded-lg border border-line bg-surface-2 px-3 py-2">
+          {wo.sseNote || '(no note provided)'}
+        </p>
+      </div>
+
+      <div>
+        <label htmlFor={`den-directive-${wo.workOrderId}`} className="block text-[11px] text-ink-2 mb-1">
+          Send Directive to SSE
+        </label>
+        <textarea
+          id={`den-directive-${wo.workOrderId}`}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          placeholder="Division call: e.g. Impose a 30 km/h cap corridor-wide, raise an emergency re-weld programme, and report daily until cleared."
+          className="w-full bg-surface-2 border border-line rounded-lg px-3 py-2.5 text-xs text-ink
+            placeholder-ink-3 resize-none focus:outline-none focus:border-warn/60 transition-colors duration-150"
+        />
+      </div>
+
+      {error && (
+        <p className="px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit">{error}</p>
+      )}
+
+      <button onClick={submit} disabled={busy || !text.trim()} className="btn-accent px-4 py-2">
+        {busy ? 'Sending…' : 'Send directive →'}
+      </button>
+    </li>
+  );
 }
 
 /**

@@ -94,4 +94,8 @@ const sseOnly = requireRoles(["sse"], "SSE");
 // JE only — field work (acknowledging and progressing work orders).
 const jeOnly = requireRoles(["je"], "JE");
 
-module.exports = { protect, adminOnly, sseOnly, jeOnly, requireRoles, getJwtSecret };
+// DEN only — the Division Engineer's tier of the escalation hierarchy. Only the
+// DEN may answer an escalation the SSE raised; JE and SSE are excluded.
+const denOnly = requireRoles(["den"], "DEN");
+
+module.exports = { protect, adminOnly, sseOnly, jeOnly, denOnly, requireRoles, getJwtSecret };
