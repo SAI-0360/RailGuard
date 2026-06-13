@@ -261,15 +261,13 @@ function processRoute(rawData, startStation, endStation) {
     segPoints.push(curr);
 
     if (segKm >= SEGMENT_LENGTH_KM) {
-      // Telemetry store holds TOTAL_SEGMENTS segments — cap geometry to match,
-      // but keep walking so totalRouteKm reports the full route length.
-      if (geoSegments.length < TOTAL_SEGMENTS) closeSegment();
+      closeSegment();
       segPoints = [curr];
       segKm = 0;
     }
   }
   // Trailing partial segment (route remainder under 1 km)
-  if (segKm > 0.05 && geoSegments.length < TOTAL_SEGMENTS && segPoints.length >= 2) {
+  if (segKm > 0.05 && segPoints.length >= 2) {
     closeSegment();
   }
 
@@ -281,7 +279,7 @@ function processRoute(rawData, startStation, endStation) {
       segmentCount: geoSegments.length,
       coveredKm: parseFloat(geoSegments.reduce((s, g) => s + g.distanceKm, 0).toFixed(2)),
       totalRouteKm: parseFloat(totalKm.toFixed(2)),
-      truncated: geoSegments.length >= TOTAL_SEGMENTS,
+      truncated: false,
       dataSource: raw.meta.source,
     },
   };

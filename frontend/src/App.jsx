@@ -15,7 +15,9 @@ import LoginPage from './components/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import JEFieldView from './components/JEFieldView';
 import DENCommandView from './components/DENCommandView';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { instructWorkOrder, escalateDenWorkOrder } from './services/api';
 import { isAdminRole, isSSERole, isJERole, isDENRole } from './utils/roles';
 import useSegments from './hooks/useSegments';
 import useStats from './hooks/useStats';
@@ -56,7 +58,7 @@ function Console() {
     refetch: refetchSelected,
   } = useSelectedSegment();
   const { logs } = useActivityLog();
-  const { workOrders } = useWorkOrders();
+  const { workOrders, refetch: refetchWorkOrders } = useWorkOrders();
   const monitoring = useMonitoring();
   // "Verify with AI →" from a work order: focus the segment and seed the
   // verification form with the JE's field report. Tagged with segmentId so the
@@ -117,6 +119,26 @@ function Console() {
       text: order.completionReport || '',
       key: `${order.workOrderId}-${Date.now()}`,
     });
+  };
+
+  // The pending escalation (if any) for the focused segment — drives the SSE's
+  // instruction form in the Focus Panel.
+  const escalatedWorkOrder = useMemo(
+    () =>
+      visibleWorkOrders.find(
+        (wo) => wo.segmentId === selectedSegment?.segmentId && wo.escalationStatus === 'requested'
+      ) || null,
+    [visibleWorkOrders, selectedSegment]
+  );
+
+  const handleInstruct = async (workOrderId, sseInstruction) => {
+    await instructWorkOrder(workOrderId, sseInstruction);
+    refetchWorkOrders();
+  };
+
+  const handleEscalateDen = async (workOrderId, sseNote) => {
+    await escalateDenWorkOrder(workOrderId, sseNote);
+    refetchWorkOrders();
   };
 
   const errorMessage = errorSegments || errorStats || errorSelected;
@@ -222,6 +244,12 @@ function Console() {
             onDefectExtracted={refreshAll}
             onRepairVerified={refreshAll}
             verifyPrefill={verifyPrefill}
+            escalatedWorkOrder={isSSE ? escalatedWorkOrder : null}
+            onInstruct={handleInstruct}
+            onEscalateDen={handleEscalateDen}
+            workOrders={visibleWorkOrders}
+            userRole={user?.role || ''}
+            onProactiveDispatched={() => { refetchWorkOrders(); refetchSegments(); }}
           />
           <WorkOrderPipeline
             workOrders={visibleWorkOrders}
@@ -229,7 +257,7 @@ function Console() {
             onVerifyReport={isSSE ? handleVerifyReport : null}
           />
           {/* Drill mode is an admin instrument; workers never see synthetic controls */}
-          {isAdmin && <DrillPanel onActionComplete={handleActionComplete} />}
+          {isAdmin && <DrillPanel segments={segments} onActionComplete={handleActionComplete} />}
         </div>
       </main>
     </div>
@@ -271,20 +299,22 @@ function UnknownRoleRedirect() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <RoleHome />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <RoleHome />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

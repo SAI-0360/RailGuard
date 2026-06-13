@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 /**
@@ -54,7 +54,7 @@ export default function AttentionQueue({ segments = [], workOrders = [], selecte
       <div className="px-2 py-2">
         {degradedCount === 0 ? (
           <div className="px-3 py-8 text-center">
-            <p className="text-sm text-ink-2">All {segments.length || 100} segments nominal.</p>
+            <p className="text-sm text-ink-2">All {segments.length} segments nominal.</p>
             <p className="text-xs text-ink-3 mt-1">
               Degraded segments will surface here as the agent detects them.
             </p>

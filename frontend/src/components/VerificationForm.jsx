@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { verifyRepair } from '../services/api';
 
@@ -14,10 +14,14 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const containerRef = useRef(null);
+  const [flash, setFlash] = useState(false);
 
   // Pre-fill from a JE field report ("Verify with AI →" in the work order
   // pipeline). prefill.key changes on each click so re-verifying re-seeds.
   // The first active defect is auto-selected so the SSE can verify in one step.
+  // The form lives at the bottom of a long Focus Panel scroll, so the handoff
+  // must land visibly: scroll it into view and flash the accent ring briefly.
   useEffect(() => {
     if (prefill && prefill.text) {
       setRepairDescription(prefill.text);
@@ -27,12 +31,22 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
         const first = defects[0];
         setSelectedDefectId(first.defectId || 'defect-0');
       }
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      containerRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 1600);
+      return () => clearTimeout(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill?.key]);
 
+  const flashClass = `rounded-lg transition-shadow duration-500 ${flash ? 'ring-2 ring-accent/40' : ''}`;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Re-entrancy guard: ignore submits while one is already in flight, so a
+    // double-click / Enter-spam can't fire the verify call multiple times.
+    if (loading) return;
     if (!repairDescription.trim() || !segmentId || !selectedDefectId) return;
 
     setLoading(true);
@@ -52,7 +66,7 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
 
   if (defects.length === 0) {
     return (
-      <div>
+      <div ref={containerRef} className={flashClass}>
         <h3 className="panel-title mb-1.5">Verify repair</h3>
         <p className="text-xs text-ink-3">
           No active defects to verify against. Log an inspection report first.
@@ -62,7 +76,7 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
   }
 
   return (
-    <div>
+    <div ref={containerRef} className={flashClass}>
       <h3 className="panel-title mb-2">Verify repair</h3>
 
       <form onSubmit={handleSubmit} className="space-y-2">

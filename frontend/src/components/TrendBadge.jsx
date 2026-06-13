@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * TrendBadge — predictive escalation chip. Static: the prediction is the

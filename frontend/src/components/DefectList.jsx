@@ -1,4 +1,3 @@
-import React from 'react';
 
 /** Severity chip mapping for defects. */
 const SEVERITY_CHIP = {

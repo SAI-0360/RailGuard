@@ -55,6 +55,11 @@ router.get("/segments", (req, res) => {
     return res.json({ segments });
   }
 
+  // Dynamically resize in-memory telemetry array to match the new route length
+  if (segments.resize) {
+    segments.resize(geo.segments.length);
+  }
+
   // Merge JIT geometry onto the live telemetry segments (same SEG-NNN ids) so
   // the simulator, monitoring loop, and detail view stay on one source of truth.
   const routeSegments = geo.segments.map((g, i) => {

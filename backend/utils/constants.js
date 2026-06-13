@@ -39,9 +39,12 @@ const CONSTANTS = {
   DEFAULT_SPIKE_VALUE: 9.5,
   DEFAULT_HEALTHY_VIBRATION: 2.0,
 
-  // Gemini
-  GEMINI_MODEL: "gemini-2.0-flash",
-  GEMINI_TIMEOUT_MS: 10000,         // Abort waiting on Gemini after 10s, fall back
+  // gemini-2.0-flash has a free-tier input-token limit of 0 on this key — every
+  // request 429s regardless of size. 2.5-flash works (only a 20 req/min cap).
+  // Verified empirically: a 9-token call to 2.0-flash still 429s. Revert to
+  // "gemini-2.0-flash" only on a paid tier where its quota is non-zero.
+  GEMINI_MODEL: "gemini-2.5-flash",
+  GEMINI_TIMEOUT_MS: 20000,         // timeout window
   GEMINI_RETRY_DELAY_MS: 2000,      // Wait before single retry on transient errors
 
   // Autonomous monitoring

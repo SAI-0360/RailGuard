@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import useSegments from '../hooks/useSegments';
 import useWorkOrders from '../hooks/useWorkOrders';
-import { progressWorkOrder } from '../services/api';
+import { progressWorkOrder, escalateWorkOrder } from '../services/api';
 import { roleLabel } from '../utils/roles';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -13,14 +13,15 @@ const WORKER_STATUS_META = {
   unacknowledged: { label: 'unacknowledged', chip: 'chip bg-surface-3 text-ink-3' },
   acknowledged: { label: 'acknowledged', chip: 'chip bg-accent/10 text-accent' },
   in_progress: { label: 'in progress', chip: 'chip bg-accent/10 text-accent' },
+  awaiting_guidance: { label: 'awaiting guidance', chip: 'chip bg-warn/10 text-warn' },
   done: { label: 'done', chip: 'chip bg-ok/10 text-ok' },
 };
 
 // The one next action for each state — the big tap target on the card
 const NEXT_ACTION = {
   unacknowledged: "I'm on it",
-  acknowledged: 'Start work',
-  in_progress: 'Mark done',
+  acknowledged: 'Start Work',
+  in_progress: 'Mark Done',
 };
 
 function useNowTicker(active) {
@@ -75,6 +76,8 @@ export default function JEFieldView() {
   const [overrides, setOverrides] = useState({});
   // Draft field reports, keyed by workOrderId, captured before "Mark done"
   const [reports, setReports] = useState({});
+  // Draft guidance notes, keyed by workOrderId, captured before "I need guidance"
+  const [guidanceNotes, setGuidanceNotes] = useState({});
 
   // My work orders — strictly the ones dispatched to me (by email)
   const mine = useMemo(
@@ -98,6 +101,11 @@ export default function JEFieldView() {
   const mySegments = useMemo(
     () => segments.filter((s) => assignedSet.has(s.segmentId)),
     [segments, assignedSet]
+  );
+  // Segment lookup so each card can show where its job physically is
+  const segById = useMemo(
+    () => new Map(mySegments.map((s) => [s.segmentId, s])),
+    [mySegments]
   );
   const scope = useMemo(() => {
     let critical = 0, warning = 0;
@@ -133,6 +141,26 @@ export default function JEFieldView() {
     }
   };
 
+  const handleEscalate = async (order) => {
+    const note = (guidanceNotes[order.workOrderId] || '').trim();
+    if (!note) return;
+    setBusyId(order.workOrderId);
+    setActionError(null);
+    try {
+      const data = await escalateWorkOrder(order.workOrderId, note);
+      setOverrides((prev) => ({ ...prev, [order.workOrderId]: data.workOrder }));
+      setGuidanceNotes((prev) => {
+        const next = { ...prev };
+        delete next[order.workOrderId];
+        return next;
+      });
+    } catch (err) {
+      setActionError(err?.response?.data?.error || 'Could not send — check your connection and retry.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-bg text-ink">
       {/* Field header — compact, identity-forward */}
@@ -151,23 +179,6 @@ export default function JEFieldView() {
       </header>
 
       <main className="max-w-md mx-auto px-4 py-4 space-y-4">
-        {/* My patch — scoped situational awareness */}
-        <section className="panel px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xs font-medium text-ink-2">My segments</h1>
-            <span className="font-mono text-[10px] text-ink-3">
-              {scope.total > 0
-                ? `${user?.assignedSegments?.[0]} – ${user?.assignedSegments?.[user.assignedSegments.length - 1]}`
-                : 'none assigned'}
-            </span>
-          </div>
-          <div className="mt-2 grid grid-cols-3 divide-x divide-line border border-line rounded-lg overflow-hidden">
-            <ScopeStat label="Critical" value={scope.critical} tone={scope.critical > 0 ? 'crit' : null} />
-            <ScopeStat label="Warning" value={scope.warning} tone={scope.warning > 0 ? 'warn' : null} />
-            <ScopeStat label="Healthy" value={scope.healthy} tone={null} />
-          </div>
-        </section>
-
         {actionError && (
           <p className="px-3 py-2 rounded-lg bg-crit/10 border border-crit/25 text-[11px] text-crit">
             {actionError}
@@ -196,6 +207,7 @@ export default function JEFieldView() {
                 <FieldCard
                   key={order.workOrderId}
                   order={order}
+                  segment={segById.get(order.segmentId)}
                   now={now}
                   expanded={expandedId === order.workOrderId}
                   busy={busyId === order.workOrderId}
@@ -204,6 +216,11 @@ export default function JEFieldView() {
                   onReportChange={(text) =>
                     setReports((prev) => ({ ...prev, [order.workOrderId]: text }))
                   }
+                  guidanceNote={guidanceNotes[order.workOrderId] || ''}
+                  onGuidanceChange={(text) =>
+                    setGuidanceNotes((prev) => ({ ...prev, [order.workOrderId]: text }))
+                  }
+                  onEscalate={() => handleEscalate(order)}
                   onToggle={() =>
                     setExpandedId((cur) => (cur === order.workOrderId ? null : order.workOrderId))
                   }
@@ -212,6 +229,24 @@ export default function JEFieldView() {
               ))}
             </div>
           )}
+        </section>
+
+        {/* My patch — scoped situational awareness. Below the queue: at 2am
+            the page exists because of a work order, so the job renders first. */}
+        <section className="panel px-4 py-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xs font-medium text-ink-2">My segments</h1>
+            <span className="font-mono text-[10px] text-ink-3">
+              {scope.total > 0
+                ? `${user?.assignedSegments?.[0]} – ${user?.assignedSegments?.[user.assignedSegments.length - 1]}`
+                : 'none assigned'}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-3 divide-x divide-line border border-line rounded-lg overflow-hidden">
+            <ScopeStat label="Critical" value={scope.critical} tone={scope.critical > 0 ? 'crit' : null} />
+            <ScopeStat label="Warning" value={scope.warning} tone={scope.warning > 0 ? 'warn' : null} />
+            <ScopeStat label="Healthy" value={scope.healthy} tone={null} />
+          </div>
         </section>
 
         {/* Recently closed — receded */}
@@ -223,6 +258,7 @@ export default function JEFieldView() {
                 <FieldCard
                   key={order.workOrderId}
                   order={order}
+                  segment={segById.get(order.segmentId)}
                   now={now}
                   expanded={expandedId === order.workOrderId}
                   busy={false}
@@ -253,15 +289,27 @@ function ScopeStat({ label, value, tone }) {
 }
 
 function FieldCard({
-  order, now, expanded, busy, reduceMotion, muted = false,
-  reportText = '', onReportChange, onToggle, onProgress,
+  order, segment, now, expanded, busy, reduceMotion, muted = false,
+  reportText = '', onReportChange,
+  guidanceNote = '', onGuidanceChange, onEscalate,
+  onToggle, onProgress,
 }) {
+  const [askGuidance, setAskGuidance] = useState(false);
   const isUrgent = order.priority === 'urgent';
   const workerStatus = order.workerStatus || 'unacknowledged';
   const statusMeta = WORKER_STATUS_META[workerStatus] || WORKER_STATUS_META.unacknowledged;
   const acknowledged = workerStatus !== 'unacknowledged';
   const nextLabel = NEXT_ACTION[workerStatus];
   const canAct = !muted && onProgress && workerStatus !== 'done';
+
+  // Structured escalation states
+  const escalationStatus = order.escalationStatus || null;
+  const isAwaiting = !muted && escalationStatus === 'requested';
+  const isResolved = !muted && escalationStatus === 'resolved';
+  // Guidance can be requested once the JE has acknowledged but hasn't escalated
+  const canRequestGuidance =
+    !muted && onEscalate && workerStatus === 'acknowledged' && !escalationStatus;
+  const showPrimary = canAct && nextLabel; // awaiting_guidance has no nextLabel
 
   return (
     <div className="panel overflow-hidden">
@@ -275,9 +323,6 @@ function FieldCard({
           <span className={`ml-auto ${isUrgent ? 'chip-crit' : 'chip-warn'}`}>{order.priority || 'high'}</span>
           <span className={statusMeta.chip}>{statusMeta.label}</span>
         </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="font-mono text-[11px] text-ink-3">{order.workOrderId}</span>
-        </div>
         {order.reason && <p className="text-[11px] text-ink-2 mt-1">{order.reason}</p>}
 
         {!muted && order.deadline && (
@@ -287,15 +332,52 @@ function FieldCard({
             now={now}
             acknowledged={acknowledged}
             done={workerStatus === 'done'}
+            awaiting={isAwaiting}
+            escalationRequestedAt={order.escalationRequestedAt}
           />
         )}
       </button>
 
-      {/* Big primary action — the human-in-the-loop tap */}
-      {canAct && nextLabel && (
+      {/* Action / escalation area */}
+      {!muted && (isAwaiting || isResolved || showPrimary || canRequestGuidance) && (
         <div className="px-4 pb-3 space-y-2">
+          {/* SSE guidance received — the JE's go-ahead, highlighted */}
+          {isResolved && order.sseInstruction && (
+            <div className="rounded-lg border border-accent/30 bg-accent/[0.07] px-3 py-2.5">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-accent mb-1">
+                SSE Instruction
+              </p>
+              <p className="text-xs text-ink-2 leading-relaxed whitespace-pre-wrap">
+                {order.sseInstruction}
+              </p>
+            </div>
+          )}
+
+          {/* Proactive SSE directives — shown when the order was manually dispatched
+              with pre-filled instructions, but the escalation flow hasn't been used yet */}
+          {!isResolved && order.type === 'proactive' && order.sseInstruction && (
+            <div className="rounded-lg border border-warn/30 bg-warn/[0.06] px-3 py-2.5">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-warn mb-1">
+                SSE Directive — Proactive Dispatch
+              </p>
+              <p className="text-xs text-ink-2 leading-relaxed whitespace-pre-wrap">
+                {order.sseInstruction}
+              </p>
+            </div>
+          )}
+
+          {/* Blocked — waiting on the section engineer */}
+          {isAwaiting && (
+            <div className="rounded-lg border border-warn/30 bg-warn/[0.08] px-3 py-3 text-center">
+              <p className="text-sm font-medium text-warn">⏳ Awaiting SSE Instruction…</p>
+              {order.jeNote && (
+                <p className="text-[11px] text-ink-3 mt-1">Your note: “{order.jeNote}”</p>
+              )}
+            </div>
+          )}
+
           {/* Field report — captured on the final step, sent to the SSE for verification */}
-          {workerStatus === 'in_progress' && (
+          {showPrimary && workerStatus === 'in_progress' && (
             <div>
               <label className="block text-[11px] text-ink-3 mb-1">Field report (optional)</label>
               <textarea
@@ -309,17 +391,70 @@ function FieldCard({
               />
             </div>
           )}
-          <button
-            onClick={onProgress}
-            disabled={busy}
-            className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition-[background-color,transform]
-              duration-150 ease-swift active:scale-[0.99] disabled:opacity-50 cursor-pointer
-              ${workerStatus === 'unacknowledged'
-                ? 'bg-accent/15 border border-accent/30 text-accent hover:bg-accent/25'
-                : 'bg-surface-2 border border-line text-ink hover:bg-surface-3'}`}
-          >
-            {busy ? 'Saving…' : nextLabel}
-          </button>
+
+          {/* Primary action — I'm on it / Start Work / Mark Done */}
+          {showPrimary && (
+            <button
+              onClick={onProgress}
+              disabled={busy}
+              className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition-[background-color,transform]
+                duration-150 ease-swift active:scale-[0.99] disabled:opacity-50 cursor-pointer
+                ${workerStatus === 'unacknowledged'
+                  ? 'bg-accent/15 border border-accent/30 text-accent hover:bg-accent/25'
+                  : 'bg-surface-2 border border-line text-ink hover:bg-surface-3'}`}
+            >
+              {busy ? 'Saving…' : (
+                workerStatus === 'acknowledged' ? 'Start Work' :
+                workerStatus === 'in_progress' ? 'Mark Done' :
+                nextLabel
+              )}
+            </button>
+          )}
+
+          {/* Secondary — "I need guidance" (acknowledged, not yet escalated) */}
+          {canRequestGuidance && !askGuidance && (
+            <button
+              onClick={() => setAskGuidance(true)}
+              className="w-full px-4 py-2.5 rounded-lg text-sm font-medium border border-warn/30
+                bg-warn/5 text-warn hover:bg-warn/10 transition-colors duration-150 cursor-pointer"
+            >
+              I need guidance →
+            </button>
+          )}
+          {canRequestGuidance && askGuidance && (
+            <div className="space-y-2">
+              <textarea
+                value={guidanceNote}
+                onChange={(e) => onGuidanceChange && onGuidanceChange(e.target.value)}
+                rows={2}
+                autoFocus
+                placeholder="What's blocking you? e.g. Crack pattern doesn't match any standard defect — unsure if this is fatigue or a weld failure."
+                className="w-full bg-surface-1 border border-line rounded-lg px-3 py-2 text-xs text-ink
+                  placeholder-ink-3 resize-none focus:outline-none focus:border-warn/60
+                  transition-colors duration-150"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={onEscalate}
+                  disabled={busy || !guidanceNote.trim()}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border border-warn/30
+                    bg-warn/10 text-warn hover:bg-warn/15 disabled:opacity-50 transition-colors
+                    duration-150 cursor-pointer"
+                >
+                  {busy ? 'Sending…' : 'Send to SSE'}
+                </button>
+                <button
+                  onClick={() => setAskGuidance(false)}
+                  disabled={busy}
+                  className="px-4 py-2.5 rounded-lg text-sm font-medium border border-line
+                    bg-surface-2 text-ink-2 hover:bg-surface-3 hover:text-ink transition-colors
+                    duration-150 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -335,12 +470,31 @@ function FieldCard({
             className="overflow-hidden bg-surface-2/40 border-t border-line"
           >
             <div className="px-4 py-3 space-y-3">
+              {/* Where the job is — a navigable position, not just an ID.
+                  Coords exist once route geometry has been computed. */}
+              {segment?.startCoord && (
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-wide text-ink-3 mb-1">Location</p>
+                  <a
+                    href={`https://www.google.com/maps?q=${segment.startCoord.lat},${segment.startCoord.lon}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-[11px] text-accent hover:underline"
+                  >
+                    {segment.startCoord.lat.toFixed(4)}, {segment.startCoord.lon.toFixed(4)} · open in Maps →
+                  </a>
+                </div>
+              )}
+
               {order.recommendedAction && (
                 <div>
                   <p className="font-mono text-[10px] uppercase tracking-wide text-ink-3 mb-1">Action required</p>
                   <p className="text-xs text-ink-2">{order.recommendedAction}</p>
                 </div>
               )}
+
+              {/* Dispatch reference — bookkeeping, so it lives in the dossier */}
+              <p className="font-mono text-[10px] text-ink-3">{order.workOrderId}</p>
 
               {order.telemetrySnapshot && (
                 <div>
@@ -395,19 +549,34 @@ function SnapshotCell({ label, value, unit, alert = false }) {
  * unacknowledged; once the JE taps "I'm on it" the clock keeps counting in
  * neutral ink. The label always names the state, never color alone.
  */
-function DeadlineMeter({ createdAt, deadline, now, acknowledged, done }) {
+function DeadlineMeter({ createdAt, deadline, now, acknowledged, done, awaiting, escalationRequestedAt }) {
   const deadlineMs = new Date(deadline).getTime();
   const createdMs = new Date(createdAt).getTime();
   const totalMs = Math.max(deadlineMs - createdMs, 1);
-  const remainingMs = deadlineMs - now;
-
-  const overdue = remainingMs <= 0;
-  const closing = !overdue && remainingMs < HOUR_MS;
-  const frac = Math.min(Math.max(remainingMs / totalMs, 0), 1);
 
   if (done) {
     return <p className="mt-2 font-mono text-[11px] text-ok">done — awaiting SSE verification</p>;
   }
+
+  // SLA paused while blocked on SSE guidance — freeze the readout at the moment
+  // guidance was requested so waiting on the SSE doesn't burn the JE's clock.
+  if (awaiting) {
+    const frozen = escalationRequestedAt ? new Date(escalationRequestedAt).getTime() : now;
+    const fr = Math.min(Math.max((deadlineMs - frozen) / totalMs, 0), 1);
+    return (
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1 flex-1 rounded-full overflow-hidden bg-surface-2">
+          <div className="h-full bg-ink-3/40" style={{ width: `${fr * 100}%` }} />
+        </div>
+        <span className="font-mono text-[11px] whitespace-nowrap text-ink-3">SLA paused · awaiting guidance</span>
+      </div>
+    );
+  }
+
+  const remainingMs = deadlineMs - now;
+  const overdue = remainingMs <= 0;
+  const closing = !overdue && remainingMs < HOUR_MS;
+  const frac = Math.min(Math.max(remainingMs / totalMs, 0), 1);
 
   let textClass = 'text-ink-2';
   let fillClass = 'bg-ink-3/40';

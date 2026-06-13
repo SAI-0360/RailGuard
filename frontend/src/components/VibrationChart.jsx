@@ -16,8 +16,9 @@ const MONO = "'JetBrains Mono', ui-monospace, monospace";
 /** Custom tooltip: instrument readout, not a floating card. */
 function ChartTooltip({ active, payload }) {
   if (!active || !payload || payload.length === 0) return null;
-  const data = payload[0].payload;
-  const vib = data.vibrationLevel;
+  const data = payload[0]?.payload;
+  if (!data) return null;
+  const vib = Number(data.vibrationLevel ?? 0);
 
   return (
     <div className="bg-surface-3 border border-line rounded-lg px-3 py-2 font-mono text-[11px]">
@@ -32,7 +33,7 @@ function ChartTooltip({ active, payload }) {
         </span>
       </p>
       {data.temperature != null && (
-        <p className="text-ink-2">temp {data.temperature.toFixed(1)}°C</p>
+        <p className="text-ink-2">temp {Number(data.temperature).toFixed(1)}°C</p>
       )}
       {data.crackDetected && <p className="text-crit">crack detected</p>}
     </div>
