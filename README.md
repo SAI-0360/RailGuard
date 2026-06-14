@@ -6,7 +6,7 @@ An autonomous, AI-powered railway safety inspector that continuously monitors tr
 
 ## 🌐 Live Demo
 
-🔗 https://railguard-operations-console.vercel.app/
+🔗 https://railguard-sooty.vercel.app/
 
 ---
 
