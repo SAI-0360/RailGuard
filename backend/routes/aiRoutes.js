@@ -66,6 +66,7 @@ function createAiRoutes(workOrders) {
       const defectLog = {
         defectId,
         ...defect,
+        source: "report",
         reportedAt: new Date().toISOString()
       };
 
@@ -75,6 +76,11 @@ function createAiRoutes(workOrders) {
       if (defect.severity === "high" || defect.severity === "critical") {
         seg.incidentCount += 1;
       }
+
+      // Logging an inspection report IS an inspection — reset the age clock so the
+      // "days since inspection" risk factor reflects that the track was just
+      // examined. Without this, a freshly inspected segment still reads as overdue.
+      seg.daysSinceInspection = 0;
 
       // Recalculate risk
       const { riskScore, status } = calculateRisk(seg);
@@ -141,6 +147,11 @@ function createAiRoutes(workOrders) {
           seg.vibrationLevel = 2.0;
           seg.crackCount = Math.max(0, seg.crackCount - 1);
         }
+
+        // A verified repair means a crew was physically on the segment — that is
+        // also a fresh inspection, so reset the age clock (keeps a just-repaired
+        // segment from immediately reading as overdue for inspection).
+        seg.daysSinceInspection = 0;
 
         // Recalculate risk
         const { riskScore, status } = calculateRisk(seg);

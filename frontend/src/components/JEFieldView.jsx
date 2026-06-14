@@ -17,6 +17,14 @@ const WORKER_STATUS_META = {
   done: { label: 'done', chip: 'chip bg-ok/10 text-ok' },
 };
 
+// Severity → chip styling for the defect tied to a work order.
+const DEFECT_SEVERITY_CHIP = {
+  low: 'chip bg-surface-3 text-ink-2',
+  medium: 'chip-warn',
+  high: 'chip-warn',
+  critical: 'chip-crit',
+};
+
 // The one next action for each state — the big tap target on the card
 const NEXT_ACTION = {
   unacknowledged: "I'm on it",
@@ -351,6 +359,15 @@ function FieldCard({
   // work order is rolled back to in_progress so the JE can correct and re-submit.
   const rejectionReason = !muted ? order.rejectionReason : null;
 
+  // The defect this order addresses — what the JE is actually fixing. Read from
+  // the segment's active defects, which are created when an SSE logs an inspection
+  // report. Match the order's defect by id when present, else show the segment's
+  // current active defect. Null until a defect has been logged for the segment.
+  const defect =
+    (segment?.activeDefects || []).find((d) => d.defectId === order.defectId) ||
+    (segment?.activeDefects || [])[0] ||
+    null;
+
   return (
     <div className="panel overflow-hidden">
       <button
@@ -364,6 +381,16 @@ function FieldCard({
           <span className={statusMeta.chip}>{statusMeta.label}</span>
         </div>
         {order.reason && <p className="text-[11px] text-ink-2 mt-1">{order.reason}</p>}
+
+        {/* Active defect — what the JE is actually here to fix, at a glance */}
+        {defect && (
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className={DEFECT_SEVERITY_CHIP[defect.severity] || DEFECT_SEVERITY_CHIP.medium}>
+              {defect.severity || 'unknown'}
+            </span>
+            <span className="text-[11px] text-ink-2 truncate">{defect.defectType || 'Unknown defect'}</span>
+          </div>
+        )}
 
         {!muted && order.deadline && (
           <DeadlineMeter
@@ -564,6 +591,26 @@ function FieldCard({
                   >
                     {segment.startCoord.lat.toFixed(4)}, {segment.startCoord.lon.toFixed(4)} · open in Maps →
                   </a>
+                </div>
+              )}
+
+              {/* Active defect — full detail: type, severity, where, and what it is */}
+              {defect && (
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-wide text-ink-3 mb-1.5">Active defect</p>
+                  <div className="flex items-center gap-2">
+                    <span className={DEFECT_SEVERITY_CHIP[defect.severity] || DEFECT_SEVERITY_CHIP.medium}>
+                      {defect.severity || 'unknown'}
+                    </span>
+                    <span className="text-xs text-ink">{defect.defectType || 'Unknown defect'}</span>
+                    {defect.defectId && (
+                      <span className="ml-auto font-mono text-[10px] text-ink-3">{defect.defectId}</span>
+                    )}
+                  </div>
+                  {defect.location && <p className="text-[11px] text-ink-3 mt-1">{defect.location}</p>}
+                  {defect.description && (
+                    <p className="text-xs text-ink-2 leading-relaxed mt-1">{defect.description}</p>
+                  )}
                 </div>
               )}
 
