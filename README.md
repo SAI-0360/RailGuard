@@ -92,7 +92,7 @@ Instead of waiting for scheduled trolley inspection runs, operators and engineer
 ## 📂 Project Structure
 
 ```
-mavericks/
+RailGuard/
 ├── backend/
 │   ├── config/
 │   │   └── db.js                 # MongoDB connection
