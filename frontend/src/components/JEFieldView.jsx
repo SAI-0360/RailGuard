@@ -24,6 +24,35 @@ const NEXT_ACTION = {
   in_progress: 'Mark Done',
 };
 
+// One-tap completion-report templates for the field report, keyed to the common
+// anomaly types. Trackside on a phone, typing a full report is slow; these fill
+// the textarea instantly and the JE edits in specifics (km marker, bolt count).
+const REPORT_PRESETS = [
+  {
+    key: 'vibration',
+    label: 'Vibration',
+    text: 'Tightened all loose fishplate bolts at coordinates, packed shifting ballast beneath the sleepers to stabilize track alignment, and confirmed vibration readings normalized.',
+  },
+  {
+    key: 'crack',
+    label: 'Crack',
+    text: 'Executed thermit weld repair to close structural cracks, ground the weld flush with the rail profile, and verified structural integrity.',
+  },
+  {
+    key: 'general',
+    label: 'General wear',
+    text: 'Repacked track ballast bed, replaced worn out elastic rail clips (ERC), and secured the rubber pad base under the rail seat.',
+  },
+];
+
+/** Pick the preset matching a segment's dominant anomaly, to highlight as suggested. */
+function suggestedPresetKey(segment) {
+  if (!segment) return null;
+  if ((segment.crackCount || 0) > 0) return 'crack';
+  if ((segment.vibrationLevel || 0) >= 4.1) return 'vibration';
+  return 'general';
+}
+
 function useNowTicker(active) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -316,6 +345,8 @@ function FieldCard({
   // outright. Gate the button until the JE has written what they did.
   const reportRequired = workerStatus === 'in_progress';
   const primaryDisabled = busy || (reportRequired && !reportText.trim());
+  // Which quick-fill preset to highlight, inferred from the segment's anomaly.
+  const suggestedPreset = suggestedPresetKey(segment);
   // Set by the backend when the AI verifier bounces a submitted repair; the
   // work order is rolled back to in_progress so the JE can correct and re-submit.
   const rejectionReason = !muted ? order.rejectionReason : null;
@@ -403,6 +434,30 @@ function FieldCard({
           {showPrimary && workerStatus === 'in_progress' && (
             <div>
               <label className="block text-[11px] text-ink-3 mb-1">Field report (required)</label>
+
+              {/* One-tap presets — the suggested one (by live telemetry) is accented */}
+              <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                <span className="text-[10px] text-ink-3">Quick fill:</span>
+                {REPORT_PRESETS.map((p) => {
+                  const isSuggested = p.key === suggestedPreset;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => onReportChange && onReportChange(p.text)}
+                      title={isSuggested ? 'Suggested for this segment' : `Fill ${p.label} repair report`}
+                      className={`px-2 py-0.5 rounded border font-mono text-[10px] cursor-pointer
+                        transition-colors duration-150
+                        ${isSuggested
+                          ? 'border-accent/40 bg-accent/10 text-accent'
+                          : 'border-line bg-surface-2 text-ink-3 hover:text-ink-2'}`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <textarea
                 value={reportText}
                 onChange={(e) => onReportChange && onReportChange(e.target.value)}
