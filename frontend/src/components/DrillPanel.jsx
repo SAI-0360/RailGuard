@@ -123,20 +123,20 @@ export default function DrillPanel({ segments = [], onActionComplete }) {
           {/* AI Mode Toggle Switch */}
           <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-2/40 border border-line">
             <span className="text-[11px] font-medium text-ink-2">
-              {useMock ? 'AI Mode: Simulated' : 'AI Mode: Live Gemini'}
+              {!useMock ? 'Turn off for Mock data' : 'Turn on for AI mode'}
             </span>
             <button
               onClick={handleToggleMock}
               disabled={loadingToggle || busy}
               className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                useMock ? 'bg-accent' : 'bg-surface-3'
+                !useMock ? 'bg-accent' : 'bg-surface-3'
               }`}
               title="Toggle between mock and live Gemini API responses"
               aria-label="Toggle Mock AI mode"
             >
               <span
                 className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  useMock ? 'translate-x-4' : 'translate-x-0'
+                  !useMock ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
             </button>
