@@ -13,6 +13,11 @@ import {
 } from '../utils/constants';
 import { getStatusColors } from '../utils/statusColors';
 
+// Shown for healthy segments instead of calling Gemini — the AI risk explanation
+// is reserved for warning/critical track, so normal zones never incur an LLM call.
+const HEALTHY_EXPLANATION =
+  'Segment parameters are operating within normal safety limits. No active defects detected.';
+
 /**
  * FocusPanel — the incident workspace for one selected segment.
  * Vital strip, linear risk meter with threshold ticks, telemetry chart,
@@ -48,13 +53,17 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
       setAiExplanation(null);
       return undefined;
     }
-    if (analysisCache.current[segmentId] !== undefined) {
-      setAiExplanation(analysisCache.current[segmentId]);
+    // Healthy track: bypass the Gemini call entirely and show a static, friendly
+    // message instantly. Checked BEFORE the cache so a warning→healthy transition
+    // can never surface a stale AI summary for a now-normal segment.
+    if (status === 'healthy') {
+      setAiExplanation(HEALTHY_EXPLANATION);
       setAnalysisLoading(false);
       return undefined;
     }
-    if (status === 'healthy') {
-      setAiExplanation(null);
+    if (analysisCache.current[segmentId] !== undefined) {
+      setAiExplanation(analysisCache.current[segmentId]);
+      setAnalysisLoading(false);
       return undefined;
     }
 

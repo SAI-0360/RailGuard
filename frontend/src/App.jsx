@@ -49,6 +49,19 @@ function Console() {
   const [view, setView] = useState('console');
   const { segments, routeInfo, loading: loadingSegments, error: errorSegments, refetch: refetchSegments } = useSegments(routeQuery);
   const { stats, error: errorStats, refetch: refetchStats } = useStats();
+  const { workOrders, refetch: refetchWorkOrders } = useWorkOrders();
+
+  // Live map of segmentId → active (pending) work-order id. This is the cache
+  // validation key for segment telemetry: if a segment's ticket changes (new
+  // ticket assigned, or cleared), the cached detail is stale and re-fetched.
+  const ticketBySegment = useMemo(() => {
+    const map = {};
+    workOrders.forEach((wo) => {
+      if (wo.status === 'pending' && !map[wo.segmentId]) map[wo.segmentId] = wo.workOrderId;
+    });
+    return map;
+  }, [workOrders]);
+
   const {
     selectedSegment,
     selectSegment,
@@ -56,9 +69,10 @@ function Console() {
     loading: loadingSelected,
     error: errorSelected,
     refetch: refetchSelected,
-  } = useSelectedSegment();
+    invalidateSegment,
+    clearCache,
+  } = useSelectedSegment(ticketBySegment);
   const { logs } = useActivityLog();
-  const { workOrders, refetch: refetchWorkOrders } = useWorkOrders();
   const monitoring = useMonitoring();
   // "Verify with AI →" from a work order: focus the segment and seed the
   // verification form with the JE's field report. Tagged with segmentId so the
@@ -99,16 +113,39 @@ function Console() {
   const handleActionComplete = (actionName, segmentId) => {
     refetchSegments();
     refetchStats();
+
+    // Global reset → every segment reverts to healthy defaults, so the whole
+    // telemetry cache is stale. Wipe it and drop the selection.
     if (actionName === 'resetAll') {
+      clearCache();
       clearSelection();
-    } else if (selectedSegment && selectedSegment.segmentId === segmentId) {
+      return;
+    }
+
+    // Broad action without a single target (e.g. mass-degrade scenario) can
+    // touch many segments — clear the cache and refresh whatever's in focus.
+    if (!segmentId) {
+      clearCache();
+      refetchSelected();
+      return;
+    }
+
+    // Targeted simulator action (spike / crack / reset on one segment): drop
+    // that segment's cached telemetry so its next view is fresh, and force a
+    // refresh now if it's the segment currently open.
+    invalidateSegment(segmentId);
+    if (selectedSegment && selectedSegment.segmentId === segmentId) {
       refetchSelected();
     }
   };
 
+  // Used after a defect extraction or a verified repair on the focused segment:
+  // invalidate its cached copy, then force a fresh pull so the panel reflects
+  // the server-side change (cleared defect, reset vibration, new status/ticket).
   const refreshAll = () => {
     refetchSegments();
     refetchStats();
+    if (selectedSegment?.segmentId) invalidateSegment(selectedSegment.segmentId);
     refetchSelected();
   };
 
