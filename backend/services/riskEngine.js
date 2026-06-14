@@ -12,6 +12,7 @@ const {
   THRESHOLD_HEALTHY_MAX,
   THRESHOLD_WARNING_MAX,
   VIBRATION_CRITICAL_THRESHOLD,
+  VIBRATION_NORMAL_MAX,
   MIN_HISTORY_FOR_PREDICTION,
   MAX_PREDICTION_DAYS,
   READINGS_PER_DAY_ESTIMATE,
@@ -115,7 +116,8 @@ function calculateRisk(segment) {
  *
  * @param {Object} segment - TrackSegment with a vibrationHistory array.
  * @returns {{predictedDaysToCritical:number, trendDirection:string, slopePerReading:number}|null}
- *   null when there is too little history, the trend is flat/falling, or the
+ *   null when the segment is healthy or its vibration is still in the normal band,
+ *   when there is too little history, when the trend is flat/falling, or when the
  *   breach is further out than MAX_PREDICTION_DAYS.
  */
 function predictTimeToCritical(segment) {
@@ -125,6 +127,19 @@ function predictTimeToCritical(segment) {
 
   const values = history.map(h => h.vibrationLevel);
   const n = values.length;
+
+  // Forecast gate: only project for a genuinely degraded segment whose vibration
+  // has actually left the normal band. Without this, OLS fitted to the monitor's
+  // random per-cycle drift produces a faint positive slope on a perfectly healthy
+  // track and reports a spurious "critical in ~30d". Two conditions, both required:
+  //   1) the composite risk model must not still rate the segment healthy, and
+  //   2) the latest reading must be at/above the normal vibration ceiling
+  //      (≥ VIBRATION_NORMAL_MAX), so we never extrapolate a 2 → 7 mm/s climb
+  //      out of pure noise.
+  if (calculateRisk(segment).status === "healthy" || values[n - 1] < VIBRATION_NORMAL_MAX) {
+    return null;
+  }
+
   // x is the evenly-spaced reading index 0..n-1; its mean is (n-1)/2.
   const xMean = (n - 1) / 2;
   const yMean = values.reduce((sum, v) => sum + v, 0) / n;

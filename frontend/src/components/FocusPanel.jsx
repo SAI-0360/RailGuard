@@ -278,6 +278,18 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
                   staff (DEN/SSE); repair verification is the SSE's sign-off. */}
               {canAct ? (
                 <div className="space-y-4 border-t border-line pt-4">
+                  {/* Verification is a two-step, inspection-led sequence:
+                      1) log the inspection report → extract the defect (required),
+                      2) verify the JE's repair against that defect. Step 1 is
+                      compulsory — a repair cannot be verified with no defect on file. */}
+                  {canVerify && (
+                    <div className="rounded-lg border border-line bg-surface-2/40 px-3 py-2">
+                      <p className="text-[11px] text-ink-2 leading-relaxed">
+                        <span className="font-medium text-ink">To verify a repair:</span> first log the
+                        inspection report below to extract the defect, then verify the JE’s work against it.
+                      </p>
+                    </div>
+                  )}
                   <ExtractionForm segmentId={segmentId} onExtracted={handleExtracted} />
                   {canVerify ? (
                     <VerificationForm

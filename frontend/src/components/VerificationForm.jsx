@@ -31,8 +31,6 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
         const first = defects[0];
         setSelectedDefectId(first.defectId || 'defect-0');
       }
-      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-      containerRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
       setFlash(true);
       const t = setTimeout(() => setFlash(false), 1600);
       return () => clearTimeout(t);
@@ -165,30 +163,30 @@ export default function VerificationForm({ segmentId, defects = [], onVerified, 
             className="mt-2 border border-line rounded-lg bg-surface-2 px-3 py-2.5 space-y-2"
           >
             <div className="flex items-center gap-3">
-              <span className={result.verification?.isVerified ? 'chip-ok' : 'chip-crit'}>
-                {result.verification?.isVerified ? 'Verified' : 'Not verified'}
+              <span className={result.repair?.isVerified ? 'chip-ok' : 'chip-crit'}>
+                {result.repair?.isVerified ? 'Verified' : 'Not verified'}
               </span>
-              {result.verification?.confidence !== undefined && (
+              {result.repair?.confidence !== undefined && (
                 <span className="font-mono text-[11px] text-ink-2">
-                  confidence {(result.verification.confidence * 100).toFixed(0)}%
+                  confidence {(result.repair.confidence * 100).toFixed(0)}%
                 </span>
               )}
             </div>
 
-            {result.verification?.verificationReasoning && (
+            {result.repair?.verificationReasoning && (
               <p className="text-[11px] text-ink-2 leading-relaxed">
-                {result.verification.verificationReasoning}
+                {result.repair.verificationReasoning}
               </p>
             )}
 
-            {result.verification?.statusRecommendation && (
+            {result.repair?.statusRecommendation && (
               <p className="text-[11px] text-ink-3">
                 Recommended status:{' '}
                 <span className={
-                  result.verification.statusRecommendation === 'healthy' ? 'text-ok' :
-                  result.verification.statusRecommendation === 'warning' ? 'text-warn' : 'text-crit'
+                  result.repair.statusRecommendation === 'healthy' ? 'text-ok' :
+                  result.repair.statusRecommendation === 'warning' ? 'text-warn' : 'text-crit'
                 }>
-                  {result.verification.statusRecommendation}
+                  {result.repair.statusRecommendation}
                 </span>
               </p>
             )}
