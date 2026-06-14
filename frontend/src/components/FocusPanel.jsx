@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { analyseSegment, createManualWorkOrder } from '../services/api';
 import VibrationChart from './VibrationChart';
@@ -12,6 +12,11 @@ import {
   THRESHOLD_HEALTHY_MAX, THRESHOLD_WARNING_MAX,
 } from '../utils/constants';
 import { getStatusColors } from '../utils/statusColors';
+import {
+  getAiExplanation,
+  cacheAiExplanation,
+  removeAiExplanation,
+} from '../utils/aiExplanationCache';
 
 // Shown for healthy segments instead of calling Gemini — the AI risk explanation
 // is reserved for warning/critical track, so normal zones never incur an LLM call.
@@ -29,9 +34,10 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisNonce, setAnalysisNonce] = useState(0);
   const [tab, setTab] = useState('overview');
-  // Cache AI analysis per segmentId so the 5s segment poll and re-renders don't
-  // re-call Gemini. Invalidated (via analysisNonce) when a defect is extracted.
-  const analysisCache = useRef({});
+  // AI analysis is cached per segmentId in sessionStorage (utils/aiExplanationCache)
+  // so the 5s segment poll and re-renders don't re-call Gemini — and crucially so
+  // explanations survive a logout/login (an in-memory ref would be wiped when the
+  // dashboard unmounts). Invalidated via analysisNonce when the risk picture changes.
 
   const segmentId = segment?.segmentId;
   const status = segment?.status;
@@ -61,8 +67,9 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
       setAnalysisLoading(false);
       return undefined;
     }
-    if (analysisCache.current[segmentId] !== undefined) {
-      setAiExplanation(analysisCache.current[segmentId]);
+    const cached = getAiExplanation(segmentId);
+    if (cached !== undefined) {
+      setAiExplanation(cached);
       setAnalysisLoading(false);
       return undefined;
     }
@@ -74,7 +81,7 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
       .then((data) => {
         if (cancelled) return;
         const text = data?.explanation || null;
-        analysisCache.current[segmentId] = text;
+        cacheAiExplanation(segmentId, text);
         setAiExplanation(text);
       })
       .catch(() => {
@@ -127,9 +134,18 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
   const handleExtracted = (response) => {
     // A new defect changes the risk picture — drop the cached analysis and
     // force a re-analysis so the summary reflects the freshly logged defect.
-    if (segmentId) delete analysisCache.current[segmentId];
+    if (segmentId) removeAiExplanation(segmentId);
     setAnalysisNonce((n) => n + 1);
     if (onDefectExtracted) onDefectExtracted(response);
+  };
+
+  const handleVerified = (response) => {
+    // A verified repair resets the segment's risk picture (often back to
+    // healthy) — invalidate the cached explanation so the next analysis is fresh
+    // rather than describing a defect that has just been resolved.
+    if (segmentId) removeAiExplanation(segmentId);
+    setAnalysisNonce((n) => n + 1);
+    if (onRepairVerified) onRepairVerified(response);
   };
 
   const chipClass =
@@ -267,7 +283,7 @@ export default function FocusPanel({ segment, loading, canAct = true, canVerify 
                     <VerificationForm
                       segmentId={segmentId}
                       defects={activeDefects}
-                      onVerified={onRepairVerified}
+                      onVerified={handleVerified}
                       prefill={verifyPrefill && verifyPrefill.segmentId === segmentId ? verifyPrefill : null}
                     />
                   ) : (

@@ -19,6 +19,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { instructWorkOrder, escalateDenWorkOrder } from './services/api';
 import { isAdminRole, isSSERole, isJERole, isDENRole } from './utils/roles';
+import { removeAiExplanation, clearAiExplanations } from './utils/aiExplanationCache';
 import useSegments from './hooks/useSegments';
 import useStats from './hooks/useStats';
 import useSelectedSegment from './hooks/useSelectedSegment';
@@ -114,26 +115,30 @@ function Console() {
     refetchSegments();
     refetchStats();
 
-    // Global reset → every segment reverts to healthy defaults, so the whole
-    // telemetry cache is stale. Wipe it and drop the selection.
+    // Global reset → every segment reverts to healthy defaults, so both the
+    // telemetry cache and the AI risk explanations are stale. Wipe them and
+    // drop the selection.
     if (actionName === 'resetAll') {
       clearCache();
+      clearAiExplanations();
       clearSelection();
       return;
     }
 
     // Broad action without a single target (e.g. mass-degrade scenario) can
-    // touch many segments — clear the cache and refresh whatever's in focus.
+    // touch many segments — clear both caches and refresh whatever's in focus.
     if (!segmentId) {
       clearCache();
+      clearAiExplanations();
       refetchSelected();
       return;
     }
 
     // Targeted simulator action (spike / crack / reset on one segment): drop
-    // that segment's cached telemetry so its next view is fresh, and force a
-    // refresh now if it's the segment currently open.
+    // that segment's cached telemetry AND its AI explanation so the next view is
+    // fresh, and force a refresh now if it's the segment currently open.
     invalidateSegment(segmentId);
+    removeAiExplanation(segmentId);
     if (selectedSegment && selectedSegment.segmentId === segmentId) {
       refetchSelected();
     }
