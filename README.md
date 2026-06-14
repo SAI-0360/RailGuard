@@ -85,7 +85,7 @@ Instead of waiting for scheduled trolley inspection runs, operators and engineer
 
 ### Deployment
 - Vercel (Frontend)
-- Railway (Backend)
+- Render (Backend)
 
 ---
 
