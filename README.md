@@ -1,97 +1,101 @@
-# 🚆 RailGuard
+<div align="center">
+  <h1>🚆 RailGuard</h1>
+  <p><strong>Autonomous AI-Powered Railway Safety Inspector & Orchestration Platform</strong></p>
+  
+  <p>
+    <img src="https://img.shields.io/badge/React-18-blue?style=flat-square&logo=react" alt="React" />
+    <img src="https://img.shields.io/badge/Node.js-Express-green?style=flat-square&logo=node.js" alt="Node" />
+    <img src="https://img.shields.io/badge/MongoDB-Mongoose-brightgreen?style=flat-square&logo=mongodb" alt="MongoDB" />
+    <img src="https://img.shields.io/badge/AI-Google_Gemini-orange?style=flat-square&logo=google" alt="Gemini" />
+  </p>
+</div>
 
-An autonomous, AI-powered railway safety inspector that continuously monitors track telemetry, JIT-calculates geometries, forecasts failures, auto-dispatches repair tickets, and verifies repairs.
+RailGuard is an autonomous, AI-powered railway safety monitoring system designed to solve a critical operational problem in heavy railway networks (such as Indian Railways P.Way divisions): **the lack of real-time monitoring, administrative paperwork delays, and communication breakdown between field workers and engineers.**
+
+By continuously monitoring track telemetry, forecasting failures, auto-dispatching repair tickets, and verifying field repairs using AI, RailGuard enforces a **"Work by Exception"** operational philosophy.
 
 ---
 
 ## 🌐 Live Demo
 
-🔗 https://railguard-sooty.vercel.app/
+🔗 **[https://railguard-sooty.vercel.app/](https://railguard-sooty.vercel.app/)**
 
 ---
 
-## 📌 Overview
+## 🛑 The Problem
 
-RailGuard is designed to solve a critical safety and operational problem in heavy railway systems (such as Indian Railways P.Way divisions) — **lack of real-time monitoring and administrative paperwork delays**.
+Currently, railway track maintenance relies heavily on manual inspections (e.g., push trolley runs). This approach has systemic flaws:
+1. **Latency:** Defects can propagate to critical failure before the next manual patrol reaches them.
+2. **Paperwork Delays:** Communication between Field Workers (JEs) and Depot Managers (SSEs) involves physical registers, causing massive delays in triage.
+3. **Blind Escalations:** When field crews face roadblocks, supervisors lack the situational awareness to provide immediate guidance.
+4. **Verification Bottlenecks:** Ensuring a repair was actually completed correctly requires another manual site visit.
 
-Instead of waiting for scheduled trolley inspection runs, operators and engineers can:
-- Monitor 100 track segments in real-time on a 10x10 glassmorphic grid.
-- Track physical route locations and curve hazards on Leaflet GIS maps.
-- Forecast structural breaches using proactive linear regression models.
-- Auto-dispatch tickets with dynamic SLA timers.
-- Verify field repairs using Gemini AI validation loops.
+## 💡 The Solution
+
+RailGuard replaces the manual reporting chain with an autonomous loop. It assumes a future where trains are equipped with track-facing sensors (accelerometers, cameras) that stream data back to a central server. 
+RailGuard ingests this data, scores the risk, and autonomously manages the entire repair lifecycle — from detection to AI-verified closure — without human intervention unless an exception occurs.
 
 ---
 
-## ✨ Features
+## ✨ Core Capabilities
 
-### 🔍 Autonomous Telemetry Monitoring
-- Continuous 10-second background scanning loop.
-- Simulates train-mounted sensor data (vibration forces, temperatures).
-- Dynamic risk assessment incorporating vibration, cracks, recency, and curve stress.
+### 🔍 Autonomous Telemetry & Risk Engine
+- A continuous background loop evaluates simulated train-mounted sensor data.
+- **Deterministic Risk Scoring:** The system calculates a unified Risk Score (0-100) using a weighted algorithm:
+  - Base risk derived from Vibration (mm/s) and Crack Count.
+  - Recency penalty applied based on the age of the last inspection.
+  - Incident history penalty applied for historically problematic segments.
+  - **Curvature Penalty Multiplier:** Applied dynamically if the segment contains a sharp curve.
 
 ### 🧠 AI-Powered Repair Verification
-- SSE (Senior Section Engineer) submits the JE's text report.
-- Gemini AI compares completion notes against original defect parameters.
-- Autonomously resets segment telemetry (vibration to 2.0 mm/s, clears cracks) and closes work orders on verification.
+- When a field engineer completes a repair, they submit a text-based field report.
+- The system feeds the original anomaly data (e.g., "Vibration at 9.5 mm/s") and the JE's report (e.g., "Tightened loose fishplate bolts") to **Google Gemini AI**.
+- Gemini validates if the described repair logically addresses the specific defect. If verified, the system automatically resets the segment's telemetry baselines and closes the work order.
 
 ### 📉 Proactive Trend Forecasting
-- Runs Ordinary Least Squares (OLS) linear regression on the last 20 vibration points.
-- Predicts exactly when a segment will breach safety ceilings (e.g., *"Predicted critical in ~2 days"*).
+- Runs Ordinary Least Squares (OLS) linear regression on the trailing 20 vibration points of a segment.
+- Calculates the degradation slope to project the exact timeframe until a safety threshold breach, alerting operators to intervene proactively (e.g., *"critical in ~2d"*).
 
-### 🗺️ JIT Route Geometry & Curvature Penalty
-- Slices raw OpenStreetMap coordinate node clouds into 1-km segments.
-- Computes planar circumradius and area Heron's formulas.
-- Automatically applies a curvature risk multiplier for sharp curves ($\le 300\text{m}$).
+### 🗺️ GIS Route Geometry & Curvature Penalty
+- Ingests raw OpenStreetMap coordinate node clouds and slices them into 1-km track segments.
+- Computes planar circumradius and area Heron's formulas on the fly.
+- Automatically applies a curvature risk multiplier for sharp track curves (≤ 300m), as derailment risk is significantly higher on curves.
 
-### ⏱️ Dynamic SLA Freeze Loop
-- Field Junior Engineers (JEs) can request guidance to freeze countdown clocks.
-- Displays "SLA Frozen" snowflake badges on the command console.
-- Deadlines are dynamically adjusted on task resumption to ensure crew evaluation remains fair.
+### ⏱️ Enterprise SLA Orchestration & Freeze Loop
+- Tickets are auto-dispatched to the geographically assigned JE with a strict 4-hour SLA countdown.
+- **SLA Freeze:** If a field crew hits a roadblock (e.g., train movement blocking the track), they can request guidance. This instantly **freezes the SLA clock** to ensure crew evaluation remains fair. The clock only resumes once the supervisor replies with new instructions.
 
-### 🎙️ Hands-Free Voice Logs & Shortcuts
-- Web Speech API dictation inside the mobile repair completion drawer.
-- Direct telephone shortcut links to call supervisors during roadblock escalations.
-
-### ⚡ Caching Optimization
-- Persistent `LocalStorage` caching for selected segment details.
-- Validated against the active Work Order (Ticket) ID to avoid stale data.
-- Bypasses Gemini AI calls for healthy segments, displaying immediate local parameters.
+### ⚡ "Work by Exception" UI Design
+- Replaces overwhelming 100-cell grids with a triaged **Attention Queue** and a collapsible **Track Strip**.
+- A **"Mute Nominal"** toggle instantly hides all healthy track segments, collapsing the interface to show only active emergencies.
+- API cost reduction: The system bypasses Gemini AI calls for healthy segments, using local static data to ensure fast loading and zero token waste.
 
 ---
 
-## 🏗️ Tech Stack
+## 👥 Operator Hierarchy
 
-### Frontend
-- React.js (v18)
-- Tailwind CSS
-- Framer Motion (UI animations)
-- Recharts (telemetry graphs)
-- Leaflet (GIS mapping)
-- Context API (state management)
+RailGuard mirrors real-world railway administration by segmenting the UI based on three operational tiers:
 
-### Backend / Services
-- Node.js
-- Express
-- MongoDB / Mongoose
+1. **District Engineer (DEN):** Top-level division commander. Sees the macro HQ Command View featuring a 10-day Corridor Health Index (CHI) trend chart, SLA breach reports, and division-wide escalations. Cannot manage individual segments.
+2. **Senior Section Engineer (SSE):** Depot manager. Has full access to the Operations Console. Sees the Live Map, Drill Panels, and Work Order Pipeline. Handles warning triage, issues guidance to blocked field crews, and triggers AI repair verifications.
+3. **Junior Engineer (JE):** Field worker. Sees a mobile-first, stripped-down Field View. They only see work orders for segments in their assigned geographical roster. They can acknowledge tickets, request guidance, and submit field completion reports.
 
-### AI Integration
-- Google Gemini API
-- Model used: `gemini-2.0-flash`
-- Used for:
-  - Defect parameters extraction
-  - Repair verification validation
-  - Risk explanation generation
+---
 
-### Deployment
-- Vercel (Frontend)
-- Render (Backend)
+## 🏗️ Technology Stack
+
+| Layer | Technology |
+| :--- | :--- |
+| **Frontend** | React.js (v18), Tailwind CSS, Framer Motion, Recharts, Leaflet |
+| **Backend** | Node.js, Express, MongoDB / Mongoose |
+| **AI Integration** | Google Gemini API (`gemini-2.0-flash`) |
+| **Deployment** | Vercel (Frontend), Koyeb/Render (Backend) |
 
 ---
 
 ## 📂 Project Structure
 
-```
+```text
 RailGuard/
 ├── backend/
 │   ├── config/
@@ -100,80 +104,39 @@ RailGuard/
 │   │   ├── raw-tracks-db.json    # Geographic OpenStreetMap data
 │   │   └── segments.js           # Live segment telemetry store
 │   ├── middleware/
-│   │   ├── auth.js               # Route JWT validation
-│   │   └── errorHandler.js       # Global error handler
+│   │   └── auth.js               # Route JWT validation
 │   ├── routes/
-│   │   ├── activityLogRoutes.js
-│   │   ├── aiRoutes.js           # Gemini extraction & verifications
-│   │   ├── authRoutes.js         # JWT auth logins
+│   │   ├── aiRoutes.js           # Gemini verification & risk endpoints
 │   │   ├── segmentRoutes.js      # Track queries & JIT route processor
-│   │   ├── statsRoutes.js        # Global counters & resets
-│   │   └── workOrderRoutes.js    # SLA ticketing & JEs rosters
+│   │   └── workOrderRoutes.js    # SLA ticketing & JE rosters
 │   ├── services/
-│   │   ├── activityLogger.js
-│   │   ├── geminiExtractor.js    # AI extraction & risk explanations
+│   │   ├── geminiExtractor.js    # AI risk explanations
 │   │   ├── geminiVerifier.js     # AI repair verifier
 │   │   ├── riskEngine.js         # Math risk scoring & regression
 │   │   └── routeProcessor.js     # Curve geometry calculations
-│   ├── server.js                 # Express entry point
-│   └── .env.example
+│   └── server.js                 # Express entry point
 │
 └── frontend/
     ├── src/
-    │   ├── components/            # Reusable UI panels & components
-    │   │   ├── CellGrid.jsx      # 10x10 color-coded schematic matrix
-    │   │   ├── FocusPanel.jsx    # Telemetry detail workspace & AI forms
-    │   │   ├── LiveMap.jsx       # Leaflet coordinate map
-    │   │   ├── LoginPage.jsx
-    │   │   ├── SituationBar.jsx  # Metric cards and status totals
-    │   │   └── WorkOrderPipeline.jsx # Columns of active tickets
-    │   ├── context/
-    │   │   └── AuthContext.jsx   # User login & logout handling
+    │   ├── components/
+    │   │   ├── AttentionQueue.jsx  # Triaged worklist & healthy summary
+    │   │   ├── DENCommandView.jsx  # Read-only division HQ dashboard
+    │   │   ├── FocusPanel.jsx      # Telemetry details & AI verification form
+    │   │   ├── JEFieldView.jsx     # Mobile-first field console for workers
+    │   │   ├── LiveMap.jsx         # Leaflet coordinate map
+    │   │   ├── RouteFilter.jsx     # Dynamic station-to-station slicing
+    │   │   ├── SituationBar.jsx    # Status totals & monitoring controls
+    │   │   ├── TrackStrip.jsx      # Linear schematic with 'Mute nominal'
+    │   │   └── WorkOrderPipeline.jsx # Pipeline of active tickets
     │   ├── hooks/
-    │   │   ├── useSegments.js    # Segment data polling hook
-    │   │   ├── useSelectedSegment.js # Segment selection & caching logic
-    │   │   └── useStats.js
-    │   ├── services/
-    │   │   └── api.js            # Axios client setup
-    │   ├── App.jsx               # Navigation & console layouts
-    │   └── main.jsx
+    │   │   └── useSegments.js      # Segment data polling hook
+    │   └── App.jsx                 # View routing based on operator tier
     └── index.html
 ```
 
 ---
 
-## 🧠 Key Design Decisions
-
-- **Work by Exception Focus**
-  - "Mute Nominal" header filter collapses the grid to hide healthy green cells, focusing operators purely on warnings and critical alerts.
-
-- **Ticket-Validated Caching**
-  - Selected segment details are cached in `localStorage` keyed by `segmentId` + `activeWorkOrderId`.
-  - Cache is invalidated automatically if the globally polled ticket ID changes, ensuring zero stale views.
-
-- **SLA Clock Adjustments**
-  - Real-world roadblocks shouldn't penalize field crew. On task resumption, the deadline is recalculated:
-    $$\text{New Deadline} = \text{Original Deadline} + (T_{\text{resume}} - T_{\text{freeze}})$$
-
----
-
-## ⚠️ Limitations
-
-- **In-Memory Cache resets:** telemetries reset to defaults on server restart (intentional for demonstration).
-- **LLM Semantic Sensitivity:** Gemini verifications can fail on ambiguous repair descriptions.
-- **Speech API Support:** Voice dictation requires Google Chrome or compatible web speech browsers.
-
----
-
-## 🚀 Future Improvements
-
-- **Round 2:** MQTT edge node integration for real accelerometers, plus RTK GPS geofencing checks.
-- **Round 3:** PostGIS spatial database re-architecting for multi-corridor depot orchestration.
-- **Round 4:** Autonomous drone camera patrols parsing rail cracks via YOLOv8 object models.
-
----
-
-## ⚙️ Setup Instructions
+## ⚙️ Local Setup Instructions
 
 ### 1. Clone the repository
 
@@ -182,7 +145,7 @@ git clone https://github.com/SAI-0360/railguard.git
 cd railguard
 ```
 
-### 2. Configure Backend (.env)
+### 2. Configure Backend
 
 Navigate to the `backend/` directory:
 ```bash
@@ -199,12 +162,12 @@ JWT_SECRET=your_long_random_jwt_secret_key
 JWT_EXPIRES_IN=24h
 ```
 
-Start the backend:
+Start the backend (runs on port 3001):
 ```bash
 npm start
 ```
 
-### 3. Configure Frontend (.env)
+### 3. Configure Frontend
 
 Open a new terminal window, navigate to the `frontend/` directory:
 ```bash
@@ -217,14 +180,26 @@ Create a `.env` file inside `frontend/` with:
 VITE_API_URL=http://localhost:3001
 ```
 
-Start the frontend:
+Start the frontend (runs on port 5173):
 ```bash
 npm run dev
 ```
 
-### 4. Login Credentials
+### 4. Operator Login Credentials
 
-You can log in to the dashboard using these seeded user accounts:
-*   **District Engineer (DEN):** `den@railguard.in` / password: `password123`
-*   **Senior Section Engineer (SSE):** `sse@railguard.in` / password: `password123`
-*   **Junior Engineer (JE):** `je1@railguard.in` / password: `password123`
+The application uses a 3-tier hierarchy. You can log in using these seeded demo accounts. Click on the respective operator row on the login screen, or enter the credentials manually:
+
+| Role | Email | Password | Access Level |
+| :--- | :--- | :--- | :--- |
+| **District Engineer (DEN)** | `den@railguard.in` | `den123` | Read-only Division HQ Command View |
+| **Senior Section Engineer (SSE)** | `sse@railguard.in` | `sse123` | Full Operations Console & AI Verification |
+| **Junior Engineer (JE)** | `je1@railguard.in` | `je1123` | Mobile-first Field View (Assigned segments only) |
+| **Junior Engineer (JE)** | `je2@railguard.in` | `je2123` | Mobile-first Field View (Assigned segments only) |
+
+---
+
+## 🚀 Future Roadmap
+
+- **Phase 2:** MQTT edge node integration for processing data from real rail-mounted accelerometers, plus RTK GPS geofencing checks.
+- **Phase 3:** PostGIS spatial database re-architecture to support multi-corridor orchestration across national boundaries.
+- **Phase 4:** Autonomous drone camera patrols parsing rail cracks via YOLOv8 object detection models.
