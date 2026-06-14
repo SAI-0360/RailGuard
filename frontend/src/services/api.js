@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const API_BASE = import.meta.env.VITE_API_URL || "https://railguard-icbm.onrender.com/";
 
 export const TOKEN_STORAGE_KEY = "railguard_token";
 export const USER_STORAGE_KEY = "railguard_user";
